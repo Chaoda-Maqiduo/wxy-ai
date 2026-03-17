@@ -7,7 +7,7 @@ cd "$PROJECT_DIR"
 IMAGE_NAME="${IMAGE_NAME:-wxy-ai:latest}"
 CONTAINER_NAME="${CONTAINER_NAME:-wxy-ai}"
 ENV_FILE="${ENV_FILE:-.env}"
-CONTAINER_PORT="${CONTAINER_PORT:-10461}"
+CONTAINER_PORT="${CONTAINER_PORT:-}"
 HOST_PORT="${HOST_PORT:-}"
 NETWORK_NAME="${NETWORK_NAME:-}"
 BUILD_NO_CACHE="${BUILD_NO_CACHE:-false}"
@@ -30,8 +30,8 @@ Optional environment variables:
   IMAGE_NAME       Docker image tag (default: wxy-ai:latest)
   CONTAINER_NAME   Docker container name (default: wxy-ai)
   ENV_FILE         Env file path (default: .env)
-  HOST_PORT        Host port exposed to outside (default: APP_PORT in .env, fallback 10461)
-  CONTAINER_PORT   Container listening port (default: 10461)
+  HOST_PORT        Host port exposed to outside (default: same as CONTAINER_PORT)
+  CONTAINER_PORT   Container listening port (default: APP_PORT in .env, fallback 10461)
   NETWORK_NAME     Docker network name to attach (optional)
   BUILD_NO_CACHE   true/1 to disable Docker build cache (default: false)
 
@@ -52,8 +52,18 @@ docker info >/dev/null 2>&1 || fail "Docker daemon is not running."
 [ -f "Dockerfile" ] || fail "Dockerfile not found in $PROJECT_DIR"
 
 if [ -z "$HOST_PORT" ]; then
-  HOST_PORT=$(awk -F= '/^[[:space:]]*APP_PORT=/{print $2}' "$ENV_FILE" | tail -n 1 | tr -d '\r' | tr -d ' ')
-  [ -n "$HOST_PORT" ] || HOST_PORT="$CONTAINER_PORT"
+  APP_PORT_FROM_ENV=$(awk -F= '/^[[:space:]]*APP_PORT=/{print $2}' "$ENV_FILE" | tail -n 1 | tr -d '\r' | tr -d ' ')
+  if [ -z "$CONTAINER_PORT" ]; then
+    CONTAINER_PORT="$APP_PORT_FROM_ENV"
+  fi
+  [ -n "$CONTAINER_PORT" ] || CONTAINER_PORT="10461"
+  HOST_PORT="$CONTAINER_PORT"
+else
+  if [ -z "$CONTAINER_PORT" ]; then
+    APP_PORT_FROM_ENV=$(awk -F= '/^[[:space:]]*APP_PORT=/{print $2}' "$ENV_FILE" | tail -n 1 | tr -d '\r' | tr -d ' ')
+    CONTAINER_PORT="$APP_PORT_FROM_ENV"
+    [ -n "$CONTAINER_PORT" ] || CONTAINER_PORT="10461"
+  fi
 fi
 
 REDIS_URL=$(awk -F= '/^[[:space:]]*REDIS_URL=/{print $2}' "$ENV_FILE" | tail -n 1 | tr -d '\r' | tr -d ' ')

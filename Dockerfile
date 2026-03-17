@@ -1,6 +1,8 @@
 ﻿# syntax=docker/dockerfile:1
 
-FROM python:3.13.3-slim AS builder
+ARG PYTHON_VERSION=3.13.3
+
+FROM python:${PYTHON_VERSION}-slim AS builder
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
@@ -14,10 +16,11 @@ WORKDIR /app
 COPY pyproject.toml uv.lock ./
 
 # Install runtime dependencies into /app/.venv (reproducible with uv.lock).
-RUN uv sync --frozen --no-dev --no-install-project
+RUN uv sync --frozen --no-dev --no-install-project \
+    && /app/.venv/bin/python -c "import uvicorn"
 
 
-FROM python:3.11-slim AS runtime
+FROM python:${PYTHON_VERSION}-slim AS runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -43,4 +46,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
 
 USER app
 
-CMD ["python", "main.py"]
+CMD ["/app/.venv/bin/python", "main.py"]
