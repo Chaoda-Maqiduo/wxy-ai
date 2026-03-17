@@ -76,7 +76,7 @@ DEEPSEEK_MODEL=deepseek-chat
 
 # 服务配置
 APP_HOST=0.0.0.0
-APP_PORT=8000
+APP_PORT=10461
 APP_DEBUG=false
 ```
 
@@ -250,10 +250,10 @@ cp .env.example .env
 # 编辑 .env，填入 DEEPSEEK_API_KEY
 
 # 3. 启动服务（开发模式）
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+uvicorn app.main:app --host 0.0.0.0 --port 10461 --reload
 
 # 4. 访问自动生成的 API 文档
-# http://localhost:8000/docs
+# http://localhost:10461/docs
 ```
 
 ---

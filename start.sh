@@ -7,7 +7,7 @@ cd "$PROJECT_DIR"
 IMAGE_NAME="${IMAGE_NAME:-wxy-ai:latest}"
 CONTAINER_NAME="${CONTAINER_NAME:-wxy-ai}"
 ENV_FILE="${ENV_FILE:-.env}"
-CONTAINER_PORT="${CONTAINER_PORT:-8000}"
+CONTAINER_PORT="${CONTAINER_PORT:-10461}"
 HOST_PORT="${HOST_PORT:-}"
 NETWORK_NAME="${NETWORK_NAME:-}"
 BUILD_NO_CACHE="${BUILD_NO_CACHE:-false}"
@@ -30,8 +30,8 @@ Optional environment variables:
   IMAGE_NAME       Docker image tag (default: wxy-ai:latest)
   CONTAINER_NAME   Docker container name (default: wxy-ai)
   ENV_FILE         Env file path (default: .env)
-  HOST_PORT        Host port exposed to outside (default: APP_PORT in .env, fallback 8000)
-  CONTAINER_PORT   Container listening port (default: 8000)
+  HOST_PORT        Host port exposed to outside (default: APP_PORT in .env, fallback 10461)
+  CONTAINER_PORT   Container listening port (default: 10461)
   NETWORK_NAME     Docker network name to attach (optional)
   BUILD_NO_CACHE   true/1 to disable Docker build cache (default: false)
 

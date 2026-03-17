@@ -22,7 +22,7 @@ FROM python:3.11-slim AS runtime
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     APP_HOST=0.0.0.0 \
-    APP_PORT=8000 \
+    APP_PORT=10461 \
     APP_DEBUG=false \
     PATH="/app/.venv/bin:$PATH"
 
@@ -36,10 +36,10 @@ COPY --from=builder --chown=app:app /app/.venv /app/.venv
 COPY --chown=app:app app ./app
 COPY --chown=app:app main.py ./main.py
 
-EXPOSE 8000
+EXPOSE 10461
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
-    CMD python -c "import os, urllib.request; port=os.getenv('APP_PORT', '8000'); urllib.request.urlopen(f'http://127.0.0.1:{port}/health', timeout=3)" || exit 1
+    CMD python -c "import os, urllib.request; port=os.getenv('APP_PORT', '10461'); urllib.request.urlopen(f'http://127.0.0.1:{port}/health', timeout=3)" || exit 1
 
 USER app
 

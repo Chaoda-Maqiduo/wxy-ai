@@ -35,7 +35,7 @@ class Settings(BaseModel):
     # FastAPI 对外监听地址。
     app_host: str = Field(default="0.0.0.0", validation_alias="APP_HOST")
     # FastAPI 对外监听端口。
-    app_port: int = Field(default=8000, validation_alias="APP_PORT")
+    app_port: int = Field(default=10461, validation_alias="APP_PORT")
     # 是否开启调试模式（例如本地热重载场景）。
     app_debug: bool = Field(default=False, validation_alias="APP_DEBUG")
     # Redis 连接地址，用于存储聊天上下文。
