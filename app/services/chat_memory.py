@@ -1,5 +1,6 @@
 import json
 from functools import lru_cache
+from os import getenv
 from typing import Sequence
 
 from langchain_core.chat_history import BaseChatMessageHistory
@@ -20,8 +21,9 @@ def _history_key(user_id: str) -> str:
 def _get_redis_client() -> Redis:
     """创建并缓存 Redis 客户端单例。"""
 
-    settings = get_settings()
-    return Redis.from_url(settings.redis_url, decode_responses=True)
+    # Prefer REDIS_URL from environment/.env for easy runtime overrides.
+    redis_url = getenv("REDIS_URL") or get_settings().redis_url
+    return Redis.from_url(redis_url, decode_responses=True)
 
 
 class RedisChatMessageHistory(BaseChatMessageHistory):
