@@ -12,6 +12,7 @@ import httpx
 from fastapi import APIRouter, HTTPException
 
 from app.schemas.wework import SetNotifyUrlResponse
+from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -31,9 +32,6 @@ APP_SECRET = "3SLmJmA6lBlKAvCabCbWtHUouUZgG4ERUARtCIxSxvhENu2DsjCknHpniwdV1Fow"
 # 实例唯一标识（固定值）
 INSTANCE_GUID = "0f38aeb3-db40-3887-8dfa-24e716547e98"
 
-# 回调通知地址（本服务通过内网穿透暴露的回调端点）
-NOTIFY_CALLBACK_URL = "https://frps2.yixun.club/api/wework/callback"
-
 
 @router.get(
     "/set_notify_url",
@@ -50,10 +48,13 @@ async def set_notify_url() -> SetNotifyUrlResponse:
     3. 返回操作结果。
     """
 
+    # 从配置中读取回调通知地址
+    notify_url = get_settings().notify_callback_url
+
     logger.info(
         "设置回调地址: guid=%s, notify_url=%s",
         INSTANCE_GUID,
-        NOTIFY_CALLBACK_URL,
+        notify_url,
     )
 
     try:
@@ -66,7 +67,7 @@ async def set_notify_url() -> SetNotifyUrlResponse:
                     "path": "/client/set_notify_url",
                     "data": {
                         "guid": INSTANCE_GUID,
-                        "notify_url": NOTIFY_CALLBACK_URL,
+                        "notify_url": notify_url,
                     },
                 },
             )

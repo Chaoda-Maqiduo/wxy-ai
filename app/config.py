@@ -18,6 +18,7 @@ _ENV_KEYS = (
     "REDIS_URL",
     "REDIS_KEY_PREFIX",
     "CHAT_HISTORY_TTL_SECONDS",
+    "NOTIFY_CALLBACK_URL",
 )
 
 
@@ -45,6 +46,11 @@ class Settings(BaseModel):
     # 聊天历史过期时间（秒），<=0 表示不过期。
     chat_history_ttl_seconds: int = Field(
         default=86400, validation_alias="CHAT_HISTORY_TTL_SECONDS"
+    )
+    # 企微回调通知地址（本服务对外暴露的回调端点）。
+    notify_callback_url: str = Field(
+        default="https://ai.aibzy.com/api/wework/callback",
+        validation_alias="NOTIFY_CALLBACK_URL",
     )
 
 
