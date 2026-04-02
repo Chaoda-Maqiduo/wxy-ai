@@ -43,4 +43,3 @@ async def query_deepseek_balance() -> BalanceResponse:
         return BalanceResponse.model_validate(data)
     except Exception as exc:  # noqa: BLE001
         raise BalanceQueryError(f"余额响应解析失败: {exc}") from exc
-

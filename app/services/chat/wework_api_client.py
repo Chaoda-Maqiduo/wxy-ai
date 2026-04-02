@@ -65,7 +65,10 @@ async def activate_user(uin: str, phone: str, unique_id: str) -> dict[str, Any]:
         "║  phone        : %s\n"
         "║  uniqueId     : %s\n"
         "╚══════════════════════════════════════════════════════════\n",
-        url, uin, phone, unique_id,
+        url,
+        uin,
+        phone,
+        unique_id,
     )
 
     async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
@@ -118,7 +121,9 @@ async def publish_text_post(uin: str, content: str) -> dict[str, Any]:
         "║  uin          : %s\n"
         "║  content      : %s\n"
         "╚══════════════════════════════════════════════════════════\n",
-        url, uin, content[:100],
+        url,
+        uin,
+        content[:100],
     )
 
     async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
@@ -180,7 +185,8 @@ async def trigger_meaningless_event(uin: str) -> dict[str, Any]:
         "║  URL          : %s\n"
         "║  uin          : %s\n"
         "╚══════════════════════════════════════════════════════════\n",
-        url, uin,
+        url,
+        uin,
     )
 
     async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
@@ -239,7 +245,9 @@ async def trigger_number_action(uin: str, number: str) -> dict[str, Any]:
         "║  uin          : %s\n"
         "║  number       : %s\n"
         "╚══════════════════════════════════════════════════════════\n",
-        url, uin, number,
+        url,
+        uin,
+        number,
     )
 
     async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:

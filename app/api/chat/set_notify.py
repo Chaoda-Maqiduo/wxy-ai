@@ -11,8 +11,8 @@ import logging
 import httpx
 from fastapi import APIRouter, HTTPException
 
-from app.schemas.wework import SetNotifyUrlResponse
 from app.config import get_settings
+from app.schemas.wework import SetNotifyUrlResponse
 
 logger = logging.getLogger(__name__)
 

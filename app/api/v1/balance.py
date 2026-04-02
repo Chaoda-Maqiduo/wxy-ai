@@ -17,4 +17,3 @@ async def get_balance() -> BalanceResponse:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"余额查询失败: {exc}") from exc
-

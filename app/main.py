@@ -2,9 +2,9 @@ import logging
 
 from fastapi import FastAPI
 
-from app.api.v1 import api_router
-from app.api.chat.set_notify import router as set_notify_router
 from app.api.chat.callback import router as callback_router
+from app.api.chat.set_notify import router as set_notify_router
+from app.api.v1 import api_router
 from app.config import get_settings
 
 # 配置日志级别为 INFO，确保 logger.info() 能正常输出。

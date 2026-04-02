@@ -4,7 +4,6 @@ from typing import Any, Optional
 
 from pydantic import BaseModel, Field
 
-
 # ============================================================
 # 设置回调地址 - 请求 / 响应
 # ============================================================
@@ -137,7 +136,9 @@ class VoiceVideoCallInviteMsg(BaseModel):
 
     roomid: Optional[str] = Field(default=None, description="房间 ID")
     roomkey: Optional[str] = Field(default=None, description="房间密钥")
-    memlist: Optional[list[VoiceVideoCallMember]] = Field(default=None, description="成员列表")
+    memlist: Optional[list[VoiceVideoCallMember]] = Field(
+        default=None, description="成员列表"
+    )
     inviteId: Optional[str] = Field(default=None, description="邀请者 ID")
     inviteType: Optional[int] = Field(default=None, description="邀请类型")
     actType: Optional[int] = Field(default=None, description="操作类型")
@@ -150,4 +151,6 @@ class VoiceVideoCallData(BaseModel):
     type: Optional[int] = Field(default=None, description="通话类型")
     msgid: Optional[str] = Field(default=None, description="消息 ID")
     timestamp: Optional[int] = Field(default=None, description="时间戳")
-    inviteMsg: Optional[VoiceVideoCallInviteMsg] = Field(default=None, description="邀请消息详情")
+    inviteMsg: Optional[VoiceVideoCallInviteMsg] = Field(
+        default=None, description="邀请消息详情"
+    )

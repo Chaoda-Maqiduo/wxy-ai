@@ -18,4 +18,3 @@ CHAT_PROMPT = ChatPromptTemplate.from_messages(
         ("human", "{input}"),
     ]
 )
-

@@ -6,7 +6,7 @@
 
 import logging
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter
 
 from app.schemas.wework import CallbackResponse, WeworkCallbackPayload
 from app.services.chat.dispatcher import dispatch_callback

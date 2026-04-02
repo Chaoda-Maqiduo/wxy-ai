@@ -32,7 +32,9 @@ class Settings(BaseModel):
         default="https://api.deepseek.com", validation_alias="DEEPSEEK_BASE_URL"
     )
     # 默认模型名称，可通过环境变量覆盖。
-    deepseek_model: str = Field(default="deepseek-chat", validation_alias="DEEPSEEK_MODEL")
+    deepseek_model: str = Field(
+        default="deepseek-chat", validation_alias="DEEPSEEK_MODEL"
+    )
     # FastAPI 对外监听地址。
     app_host: str = Field(default="0.0.0.0", validation_alias="APP_HOST")
     # FastAPI 对外监听端口。
@@ -40,9 +42,13 @@ class Settings(BaseModel):
     # 是否开启调试模式（例如本地热重载场景）。
     app_debug: bool = Field(default=False, validation_alias="APP_DEBUG")
     # Redis 连接地址，用于存储聊天上下文。
-    redis_url: str = Field(default="redis://localhost:6379/0", validation_alias="REDIS_URL")
+    redis_url: str = Field(
+        default="redis://localhost:6379/0", validation_alias="REDIS_URL"
+    )
     # Redis 中聊天历史 key 前缀。
-    redis_key_prefix: str = Field(default="chat_history", validation_alias="REDIS_KEY_PREFIX")
+    redis_key_prefix: str = Field(
+        default="chat_history", validation_alias="REDIS_KEY_PREFIX"
+    )
     # 聊天历史过期时间（秒），<=0 表示不过期。
     chat_history_ttl_seconds: int = Field(
         default=86400, validation_alias="CHAT_HISTORY_TTL_SECONDS"
@@ -59,10 +65,6 @@ def get_settings() -> Settings:
     """获取全局配置单例，避免重复解析环境变量。"""
 
     # 仅收集有值的环境变量；未设置项走 Settings 中的默认值。
-    env_values = {
-        key: value
-        for key in _ENV_KEYS
-        if (value := getenv(key)) is not None
-    }
+    env_values = {key: value for key in _ENV_KEYS if (value := getenv(key)) is not None}
     # 用 Pydantic 完成类型转换与校验，例如端口转 int、debug 转 bool。
     return Settings.model_validate(env_values)
