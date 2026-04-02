@@ -11,8 +11,13 @@ import re
 from typing import Any
 
 from app.schemas.wework import NewMessageData
+from app.services.chat.wework_api_client import (
+    activate_user,
+    publish_text_post,
+    trigger_meaningless_event,
+    trigger_number_action,
+)
 from app.services.extract_service import extract_core_content
-from app.services.chat.wework_api_client import activate_user, publish_text_post
 
 logger = logging.getLogger(__name__)
 
@@ -22,18 +27,43 @@ logger = logging.getLogger(__name__)
 # ============================================================
 _POST_KEYWORDS = [
     # 直接表达
-    "投稿", "发帖", "发个帖子", "发一个帖子", "发条帖子",
-    "发布", "帮我发布", "帮发布", "请帮我发布",
+    "投稿",
+    "发帖",
+    "发个帖子",
+    "发一个帖子",
+    "发条帖子",
+    "发布",
+    "帮我发布",
+    "帮发布",
+    "请帮我发布",
     # 委托表达
-    "帮发", "帮我发", "帮忙发", "帮忙发一下", "帮转发",
-    "代发", "代我发", "代替我发",
-    "给我发", "替我发", "麻烦发一下",
+    "帮发",
+    "帮我发",
+    "帮忙发",
+    "帮忙发一下",
+    "帮转发",
+    "代发",
+    "代我发",
+    "代替我发",
+    "给我发",
+    "替我发",
+    "麻烦发一下",
     # 口语化表达
-    "发一下", "发下", "帮我发下", "帮我投稿",
-    "我要发帖", "我想发帖", "我要投稿", "我想投稿",
-    "请帮忙发", "请帮我发", "请代发",
+    "发一下",
+    "发下",
+    "帮我发下",
+    "帮我投稿",
+    "我要发帖",
+    "我想发帖",
+    "我要投稿",
+    "我想投稿",
+    "请帮忙发",
+    "请帮我发",
+    "请代发",
     # 简短指令
-    "发这个", "发出去", "帮我发出去",
+    "发这个",
+    "发出去",
+    "帮我发出去",
 ]
 
 
@@ -83,7 +113,8 @@ async def handle_new_message(guid: str, data: dict[str, Any]) -> str:
         "╚══════════════════════════════════════════════════════════\n",
         guid,
         chat_type,
-        msg_data.sender, msg_data.sender_name,
+        msg_data.sender,
+        msg_data.sender_name,
         msg_data.receiver,
         msg_data.roomid,
         msg_data.id,
@@ -103,16 +134,18 @@ async def handle_new_message(guid: str, data: dict[str, Any]) -> str:
     # ----------------------------------------------------------
     analyze_info = await analyze_message(msg_data.content)
 
-    if analyze_info is not None:
-        # 使用消息发送者 ID 作为 uin（企微协议中 sender 即用户标识）
-        sender_uin = msg_data.sender
-        action_result = await _execute_action(sender_uin, analyze_info)
-        return action_result
+    # 使用消息发送者 ID 作为 uin（企微协议中 sender 即用户标识）
+    sender_uin = msg_data.sender
 
-    return (
-        f"新消息已处理, sender={msg_data.sender}, "
-        f"chat_type={chat_type}, content_type={msg_data.content_type}"
-    )
+    if analyze_info is None:
+        # 无法识别任何事件时，降级为无意义事件
+        analyze_info = {
+            "event_type": "meaningless",
+            "raw_message": msg_data.content,
+        }
+
+    action_result = await _execute_action(sender_uin, analyze_info)
+    return action_result
 
 
 async def _execute_action(sender_uin: str, analyze_info: dict[str, Any]) -> str:
@@ -139,7 +172,9 @@ async def _execute_action(sender_uin: str, analyze_info: dict[str, Any]) -> str:
         unique_id = payload.get("u", "")
 
         if not unique_id or not phone:
-            logger.warning("激活事件缺少必要参数: unique_id=%s, phone=%s", unique_id, phone)
+            logger.warning(
+                "激活事件缺少必要参数: unique_id=%s, phone=%s", unique_id, phone
+            )
             return "激活失败: 缺少 unique_id 或 phone 参数"
 
         try:
@@ -196,6 +231,46 @@ async def _execute_action(sender_uin: str, analyze_info: dict[str, Any]) -> str:
             return f"发帖异常: {exc}"
 
     # ----------------------------------------------------------
+    # 数字事件：用户发送单独数字（如 "1"、"2"、"3"），对应菜单选项
+    # ----------------------------------------------------------
+    if event_type == "number_action":
+        number = analyze_info.get("number", "")
+
+        try:
+            result = await trigger_number_action(
+                uin=sender_uin,
+                number=number,
+            )
+            code = result.get("code")
+            message = result.get("message", "")
+            if code == 2000:
+                return f"数字事件处理成功: number={number}, message={message}"
+            else:
+                return (
+                    f"数字事件处理失败: number={number}, code={code}, message={message}"
+                )
+        except Exception as exc:
+            logger.error("调用数字事件接口异常: %s", exc)
+            return f"数字事件异常: {exc}"
+
+    # ----------------------------------------------------------
+    # 无意义事件：消息无法匹配任何已知事件，调用无意义事件接口
+    # 后端会向用户发送使用教程（引导发送数字编号触发功能）
+    # ----------------------------------------------------------
+    if event_type == "meaningless":
+        try:
+            result = await trigger_meaningless_event(uin=sender_uin)
+            code = result.get("code")
+            message = result.get("message", "")
+            if code == 2000:
+                return f"无意义事件已通知后端: uin={sender_uin}, message={message}"
+            else:
+                return f"无意义事件接口响应异常: code={code}, message={message}"
+        except Exception as exc:
+            logger.error("调用无意义事件接口异常: %s", exc)
+            return f"无意义事件异常: {exc}"
+
+    # ----------------------------------------------------------
     # 未知事件类型（理论上不应到达这里）
     # ----------------------------------------------------------
     logger.warning("未处理的事件类型: %s", event_type)
@@ -213,10 +288,12 @@ async def analyze_message(msg: str) -> dict | None:
         匹配到的事件信息字典，未匹配到任何事件时返回 None。
 
     支持的事件：
-        1. 激活事件 — 文本示例："激活: eyJ1IjoiMjk3MjEyMjQiLCAicCI6IjE4ODg4ODg4ODg4In0="
+        1. 激活事件 — 文本示例："激活码: eyJ1IjoiMjk3MjEyMjQiLCAicCI6IjE4ODg4ODg4ODg4In0="
            "激活" 关键词 + 冒号 + 一段 base64 编码
         2. 发帖事件 — 包含"投稿"、"帮发"、"发帖"等关键词，
            调用 LLM 提取用户真正想发布的内容
+        3. 数字事件 — 用户单独发送一个数字（如 "1"、"2"），
+           对应后端菜单选项，由后端执行对应操作
     """
 
     if msg is None:
@@ -319,7 +396,31 @@ async def analyze_message(msg: str) -> dict | None:
             "matched_keyword": matched_keyword,
             "extracted_content": extracted_content,
         }
-        
+
+    # ----------------------------------------------------------
+    # 3. 匹配数字事件
+    #    文本特征：消息去除首尾空格后，整体为一个正整数（如 "1"、"2"、"10"）
+    #    匹配逻辑：完整匹配，避免含有其他字符的消息误触发
+    # ----------------------------------------------------------
+    number_match = re.fullmatch(r"[1-9]\d*", text)
+    if number_match:
+        number_str = number_match.group()
+        logger.info(
+            "\n"
+            "╔══════════════════════════════════════════════════════════\n"
+            "║ 🔢 识别到数字事件\n"
+            "╠══════════════════════════════════════════════════════════\n"
+            "║  原始消息     : %s\n"
+            "║  识别数字     : %s\n"
+            "╚══════════════════════════════════════════════════════════\n",
+            text,
+            number_str,
+        )
+        return {
+            "event_type": "number_action",
+            "raw_message": text,
+            "number": number_str,
+        }
 
     # ----------------------------------------------------------
     # 未匹配到任何已知事件

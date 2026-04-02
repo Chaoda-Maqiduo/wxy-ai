@@ -8,12 +8,11 @@ import logging
 from typing import Any, Callable, Coroutine
 
 from app.schemas.wework import WeworkCallbackPayload
-
+from app.services.chat.handler_call import handle_voice_video_call
+from app.services.chat.handler_device import handle_other_device_login
 from app.services.chat.handler_login import handle_login, handle_logout
 from app.services.chat.handler_message import handle_new_message
 from app.services.chat.handler_qrcode import handle_qrcode_change
-from app.services.chat.handler_device import handle_other_device_login
-from app.services.chat.handler_call import handle_voice_video_call
 
 logger = logging.getLogger(__name__)
 
@@ -25,12 +24,12 @@ logger = logging.getLogger(__name__)
 HandlerFunc = Callable[[str, dict[str, Any]], Coroutine[Any, Any, str]]
 
 _HANDLER_MAP: dict[int, HandlerFunc] = {
-    11002: handle_qrcode_change,       # 二维码变化
-    11003: handle_login,               # 登录
-    11004: handle_logout,              # 退出登录
-    11010: handle_new_message,         # 新消息
+    11002: handle_qrcode_change,  # 二维码变化
+    11003: handle_login,  # 登录
+    11004: handle_logout,  # 退出登录
+    11010: handle_new_message,  # 新消息
     11011: handle_other_device_login,  # 其他设备登录
-    2166:  handle_voice_video_call,    # 视频/语音电话
+    2166: handle_voice_video_call,  # 视频/语音电话
 }
 
 
