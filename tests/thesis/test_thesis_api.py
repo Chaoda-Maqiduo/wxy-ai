@@ -1,0 +1,134 @@
+from pathlib import Path
+from urllib.parse import unquote
+from uuid import uuid4
+
+import pytest
+from fastapi.testclient import TestClient
+
+import app.api.v1.thesis as thesis_api
+from app.main import app
+
+
+@pytest.fixture
+def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
+    monkeypatch.setattr(thesis_api, "OUTPUT_ROOT", tmp_path)
+    with TestClient(app) as test_client:
+        yield test_client
+
+
+def test_thesis_routes_are_registered() -> None:
+    routes = {route.path for route in app.routes}
+    assert "/api/v1/thesis/outline" in routes
+    assert "/api/v1/thesis/generate" in routes
+    assert "/api/v1/thesis/status/{task_id}" in routes
+    assert "/api/v1/thesis/download/{task_id}" in routes
+
+
+def test_outline_success(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fake_generate_outline(title: str) -> str:
+        return f"# {title}\n\n## 一、绪论\n## 二、系统设计"
+
+    monkeypatch.setattr(thesis_api, "_load_generate_outline", lambda: fake_generate_outline)
+
+    response = client.post(
+        "/api/v1/thesis/outline",
+        json={"title": "基于大模型的论文自动生成系统设计"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["title"] == "基于大模型的论文自动生成系统设计"
+    assert payload["outline"].startswith("# 基于大模型的论文自动生成系统设计")
+
+
+def test_outline_title_too_short_returns_422(client: TestClient) -> None:
+    response = client.post("/api/v1/thesis/outline", json={"title": "a"})
+    assert response.status_code == 422
+
+
+def test_generate_and_status_flow(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fake_run_generate(task_id: str, title: str, outline: str) -> None:
+        assert task_id
+        assert title
+        assert outline
+
+    monkeypatch.setattr(thesis_api, "_run_generate", fake_run_generate)
+
+    response = client.post(
+        "/api/v1/thesis/generate",
+        json={
+            "title": "测试论文",
+            "outline": "第1章 绪论\n" + "正文" * 30,
+        },
+    )
+
+    assert response.status_code == 200
+    task_id = response.json()["task_id"]
+
+    pending = client.get(f"/api/v1/thesis/status/{task_id}")
+    assert pending.status_code == 200
+    assert pending.json()["status"] == "pending"
+
+    thesis_api._write_status(
+        task_id,
+        "completed",
+        message="论文生成完成",
+        figure_count=3,
+        mermaid_count=2,
+        ai_image_count=1,
+        fallback_count=0,
+        fulltext_char_count=8200,
+        truncation_warning=False,
+    )
+    completed = client.get(f"/api/v1/thesis/status/{task_id}")
+    assert completed.status_code == 200
+    payload = completed.json()
+    assert payload["status"] == "completed"
+    assert payload["figure_count"] == 3
+    assert payload["mermaid_count"] == 2
+    assert payload["ai_image_count"] == 1
+
+
+def test_status_utils_roundtrip(client: TestClient) -> None:
+    task_id = uuid4().hex[:12]
+    thesis_api._write_status(task_id, "pending", message="running")
+    stored = thesis_api._read_status(task_id)
+
+    assert stored is not None
+    assert stored["task_id"] == task_id
+    assert stored["status"] == "pending"
+    assert stored["message"] == "running"
+
+
+def test_download_pending_returns_409(client: TestClient) -> None:
+    task_id = uuid4().hex[:12]
+    thesis_api._write_status(task_id, "pending", message="正在生成论文...")
+
+    response = client.get(f"/api/v1/thesis/download/{task_id}")
+
+    assert response.status_code == 409
+
+
+def test_download_nonexistent_task_returns_404(client: TestClient) -> None:
+    response = client.get(f"/api/v1/thesis/download/{uuid4().hex[:12]}")
+    assert response.status_code == 404
+
+
+def test_download_completed_returns_docx(client: TestClient, tmp_path: Path) -> None:
+    task_id = uuid4().hex[:12]
+    output_dir = tmp_path / task_id
+    output_dir.mkdir(parents=True, exist_ok=True)
+    docx_path = output_dir / "论文_测试.docx"
+    docx_path.write_bytes(b"fake docx payload")
+
+    thesis_api._write_status(task_id, "completed", message="论文生成完成")
+
+    response = client.get(f"/api/v1/thesis/download/{task_id}")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith(
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    )
+    disposition = response.headers["content-disposition"]
+    assert "filename*=" in disposition
+    assert unquote(disposition).endswith("论文_测试.docx")

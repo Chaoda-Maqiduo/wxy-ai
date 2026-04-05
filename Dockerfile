@@ -32,7 +32,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 # Run as non-root user in container.
-RUN addgroup --system app && adduser --system --ingroup app app
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    nodejs npm \
+    && npm install -g @mermaid-js/mermaid-cli \
+    && apt-get clean && rm -rf /var/lib/apt/lists/* \
+    && addgroup --system app && adduser --system --ingroup app app
 
 # Copy prebuilt virtualenv and app source.
 COPY --from=builder --chown=app:app /app/.venv /app/.venv

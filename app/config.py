@@ -19,6 +19,8 @@ _ENV_KEYS = (
     "REDIS_KEY_PREFIX",
     "CHAT_HISTORY_TTL_SECONDS",
     "NOTIFY_CALLBACK_URL",
+    "THESIS_OUTLINE_MODEL",
+    "THESIS_FULLTEXT_MODEL",
 )
 
 
@@ -57,6 +59,14 @@ class Settings(BaseModel):
     notify_callback_url: str = Field(
         default="https://ai.aibzy.com/api/wework/callback",
         validation_alias="NOTIFY_CALLBACK_URL",
+    )
+    # 论文系统大纲阶段模型（默认偏快、低成本）。
+    thesis_outline_model: str = Field(
+        default="deepseek-chat", validation_alias="THESIS_OUTLINE_MODEL"
+    )
+    # 论文系统全文阶段模型（默认偏长文推理能力）。
+    thesis_fulltext_model: str = Field(
+        default="deepseek-reasoner", validation_alias="THESIS_FULLTEXT_MODEL"
     )
 
 

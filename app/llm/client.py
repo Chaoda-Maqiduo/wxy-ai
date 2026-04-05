@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+from langchain_core.language_models import BaseChatModel
 from langchain_openai import ChatOpenAI
 
 from app.config import get_settings
@@ -23,3 +24,30 @@ def get_llm() -> ChatOpenAI:
         # 提取任务倾向稳定输出，温度设为 0。
         temperature=0,
     )
+
+
+def create_llm(
+    model: str | None = None,
+    temperature: float | None = None,
+    max_tokens: int | None = None,
+) -> BaseChatModel:
+    """创建通用 LLM 客户端，支持按场景覆盖模型参数。"""
+
+    settings = get_settings()
+    if not settings.deepseek_api_key:
+        raise ValueError("DEEPSEEK_API_KEY is not configured")
+
+    resolved_model = model or settings.deepseek_model
+    kwargs: dict[str, object] = {
+        "model": resolved_model,
+        "api_key": settings.deepseek_api_key,
+        "base_url": settings.deepseek_base_url,
+    }
+
+    # deepseek-reasoner 不支持 temperature / top_p 等采样参数。
+    if temperature is not None and "reasoner" not in resolved_model:
+        kwargs["temperature"] = temperature
+    if max_tokens is not None:
+        kwargs["max_tokens"] = max_tokens
+
+    return ChatOpenAI(**kwargs)

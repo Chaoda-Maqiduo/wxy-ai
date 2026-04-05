@@ -1,0 +1,149 @@
+import json
+import logging
+import re
+from typing import Any, Literal
+
+from pydantic import BaseModel, Field, ValidationError
+
+logger = logging.getLogger(__name__)
+
+# 匹配 <<FIGURE>> ... <</FIGURE>> 占位块，支持跨行内容。
+FIGURE_BLOCK_PATTERN = re.compile(r"<<FIGURE>>\s*(.*?)\s*<</FIGURE>>", re.DOTALL)
+
+
+class OutlineRequest(BaseModel):
+    """生成论文大纲请求。"""
+
+    title: str = Field(..., min_length=2, max_length=200, description="论文标题")
+
+
+class OutlineResponse(BaseModel):
+    """生成论文大纲响应。"""
+
+    title: str
+    outline: str = Field(..., description="Markdown 格式大纲")
+
+
+class GenerateRequest(BaseModel):
+    """提交论文生成任务请求。"""
+
+    title: str = Field(..., min_length=2, max_length=200, description="论文标题")
+    outline: str = Field(..., min_length=50, description="用户确认/修改后的论文大纲")
+
+
+class GenerateSubmitResponse(BaseModel):
+    """提交任务后立即返回。"""
+
+    task_id: str
+    message: str = "任务已提交，正在生成中"
+
+
+class TaskStatusResponse(BaseModel):
+    """任务状态查询响应。"""
+
+    task_id: str
+    status: Literal["pending", "completed", "failed"]
+    message: str = ""
+    figure_count: int = Field(default=0, ge=0)
+    mermaid_count: int = Field(default=0, ge=0)
+    ai_image_count: int = Field(default=0, ge=0)
+    fallback_count: int = Field(default=0, ge=0)
+    fulltext_char_count: int = Field(default=0, ge=0)
+    truncation_warning: bool = False
+
+
+class MermaidFigure(BaseModel):
+    """Mermaid 技术图占位符。"""
+
+    caption: str = Field(..., min_length=1)
+    render_method: Literal["mermaid"]
+    mermaid_code: str = Field(..., min_length=1)
+
+
+class AiImageFigure(BaseModel):
+    """AI 生图占位符。"""
+
+    caption: str = Field(..., min_length=1)
+    render_method: Literal["ai_image"]
+    description: str = Field(..., min_length=1)
+    style: str = "concept_illustration"
+    aspect_ratio: str = "16:9"
+
+
+class FallbackFigure(BaseModel):
+    """解析或校验失败时的降级占位符。"""
+
+    caption: str = "（占位图）"
+    render_method: Literal["fallback"] = "fallback"
+    error: str = ""
+
+
+def validate_figure_payload(raw: dict[str, Any], index: int) -> dict[str, Any]:
+    """校验单个占位符；失败时返回 fallback，确保索引不丢失。"""
+
+    method = raw.get("render_method", "")
+    try:
+        if method == "mermaid":
+            validated = MermaidFigure(**raw)
+        elif method == "ai_image":
+            validated = AiImageFigure(**raw)
+        else:
+            raise ValueError(f"未知的 render_method: {method!r}")
+        result = validated.model_dump()
+    except (ValidationError, ValueError, TypeError) as exc:
+        logger.warning("占位符 #%d 校验失败，使用 fallback: %s", index, exc)
+        result = FallbackFigure(error=str(exc)).model_dump()
+
+    result["index"] = index
+    return result
+
+
+def extract_figure_placeholders(text: str) -> list[dict[str, Any]]:
+    """提取并校验全文中的全部图片占位符。"""
+
+    placeholders: list[dict[str, Any]] = []
+    matches = FIGURE_BLOCK_PATTERN.findall(text)
+
+    for index, match in enumerate(matches):
+        try:
+            raw = json.loads(match.strip())
+        except json.JSONDecodeError as exc:
+            logger.warning("占位符 #%d JSON 解析失败: %s", index, exc)
+            placeholders.append(
+                FallbackFigure(error=f"JSON 解析失败: {exc}").model_dump()
+                | {"index": index}
+            )
+            continue
+
+        placeholders.append(validate_figure_payload(raw, index=index))
+
+    return placeholders
+
+
+def split_by_render_method(
+    placeholders: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+    """按渲染方式分组，返回 (mermaid, ai_image, fallback)。"""
+
+    mermaid = [item for item in placeholders if item.get("render_method") == "mermaid"]
+    ai_image = [item for item in placeholders if item.get("render_method") == "ai_image"]
+    fallback = [
+        item for item in placeholders if item.get("render_method") == "fallback"
+    ]
+    return mermaid, ai_image, fallback
+
+
+__all__ = [
+    "AiImageFigure",
+    "FallbackFigure",
+    "FIGURE_BLOCK_PATTERN",
+    "GenerateRequest",
+    "GenerateSubmitResponse",
+    "MermaidFigure",
+    "OutlineRequest",
+    "OutlineResponse",
+    "TaskStatusResponse",
+    "extract_figure_placeholders",
+    "split_by_render_method",
+    "validate_figure_payload",
+]
