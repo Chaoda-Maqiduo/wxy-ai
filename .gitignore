@@ -14,3 +14,7 @@ wheels/
 
 # Generated thesis files
 app/output/
+
+# OS & IDE
+.DS_Store
+.idea/
