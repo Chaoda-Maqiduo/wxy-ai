@@ -41,8 +41,11 @@ def _collect_table_lines(lines: list[str], start: int) -> tuple[list[list[str]],
     return rows, i
 
 
-def _add_markdown_text_to_paragraph(paragraph, text: str, is_header: bool = False):
+def _add_markdown_text_to_paragraph(paragraph, text: str, is_header: bool = False, is_table: bool = False):
     """解析 Markdown 内联加粗并添加到段落中"""
+    # 移除转码过程或大模型常常加上的 '~' 约等于号或误标的点
+    text = text.replace("~", "")
+    
     parts = re.split(r'(\*\*.*?\*\*)', text)
     for part in parts:
         if not part:
@@ -55,10 +58,12 @@ def _add_markdown_text_to_paragraph(paragraph, text: str, is_header: bool = Fals
             if is_header:
                 run.bold = True
         
-        # 统一设置字体
+        # 强制指定中文字体，确保不发生回退
         run.font.name = "宋体"
-        run.font.size = Pt(10.5)  # 五号字
         run._element.rPr.rFonts.set(qn("w:eastAsia"), "宋体")
+        # 如果是表格内容，强行缩小为五号字
+        if is_table:
+            run.font.size = Pt(10.5)
 
 
 def _add_table(document: Document, rows: list[list[str]]) -> None:
@@ -76,7 +81,7 @@ def _add_table(document: Document, rows: list[list[str]]) -> None:
             cell = table.rows[i].cells[j]
             # Word 新建单元格默认自带一个空段落
             p = cell.paragraphs[0] if cell.paragraphs else cell.add_paragraph()
-            _add_markdown_text_to_paragraph(p, cell_text, is_header=(i == 0))
+            _add_markdown_text_to_paragraph(p, cell_text, is_header=(i == 0), is_table=True)
 
 
 # ---------- 文档样式初始化 ----------
@@ -195,9 +200,11 @@ def _add_toc_page(document: Document) -> None:
     fld_sep.set(qn("w:fldCharType"), "separate")
     r_element.append(fld_sep)
 
-    # 占位文本不再需要提示用户手动点击了
-    hint = paragraph.add_run("目录正在自动生成中...")
+    # 占位文本：对部分无法自动刷新目录的软件（如WPS）进行提示
+    hint = paragraph.add_run(" （目录正在底层生成中，请在此处右键并选择“更新域”即可获取最新排版目录） ")
     hint.font.size = Pt(10)
+    from docx.shared import RGBColor
+    hint.font.color.rgb = RGBColor(128, 128, 128)
 
     # <w:fldChar w:fldCharType="end"/>
     fld_end = OxmlElement("w:fldChar")

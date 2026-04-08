@@ -234,7 +234,7 @@ class TwelveAIGenerator(ImageGenerator):
                 "responseModalities": ["IMAGE"],
                 "imageConfig": {
                     "aspectRatio": real_aspect,
-                    "imageSize": "2K"
+                    "imageSize": "4K"
                 }
             }
         }
@@ -278,30 +278,43 @@ async def render_all_figures(
         output_path = f"{output_dir}/fig_{index}.png"
         method = placeholder.get("render_method")
 
-        try:
-            if method == "mermaid":
-                rendered_path = await render_mermaid(
-                    placeholder["mermaid_code"], output_path
-                )
-                return index, rendered_path
-            if method == "ai_image":
-                rendered_path = await image_generator.generate(
-                    description=placeholder["description"],
-                    style=placeholder.get("style", "concept_illustration"),
-                    aspect_ratio=placeholder.get("aspect_ratio", "16:9"),
-                    output_path=output_path,
-                )
-                return index, rendered_path
-            if method == "fallback":
-                logger.warning("占位符 #%d 为 fallback，跳过渲染", index)
-                return index, None
+        max_retries = 5
+        for attempt in range(max_retries):
+            try:
+                if method == "mermaid":
+                    rendered_path = await render_mermaid(
+                        placeholder["mermaid_code"], output_path
+                    )
+                    return index, rendered_path
+                elif method == "ai_image":
+                    rendered_path = await image_generator.generate(
+                        description=placeholder["description"],
+                        style=placeholder.get("style", "concept_illustration"),
+                        aspect_ratio=placeholder.get("aspect_ratio", "16:9"),
+                        output_path=output_path,
+                    )
+                    return index, rendered_path
+                elif method == "fallback":
+                    logger.warning("占位符 #%d 为 fallback，跳过渲染", index)
+                    return index, None
+                else:
+                    logger.warning("占位符 #%d 的 render_method 非法: %s", index, method)
+                    return index, None
 
-            logger.warning("占位符 #%d 的 render_method 非法: %s", index, method)
-            return index, None
-        except Exception as exc:
-            # 单图失败不影响整篇论文输出。
-            logger.exception("占位符 #%d 渲染失败: %s", index, exc)
-            return index, None
+            except Exception as exc:
+                if method == "mermaid":
+                    # Mermaid 语法错误如果重试也是错的，所以发生异常后直接转交给高智商大模型（ai_image）兜底！
+                    logger.warning("占位符 #%d Mermaid 生成代码存在语法错误，自动转大模型生图兜底: %s", index, exc)
+                    method = "ai_image"
+                    # 这里故意不 return，让循环继续走 ai_image 分支
+                else:
+                    if attempt < max_retries - 1:
+                        logger.warning("占位符 #%d ai_image 出错，重试 %d/%d: %s", index, attempt + 1, max_retries, exc)
+                        await asyncio.sleep(2)
+                    else:
+                        logger.exception("占位符 #%d 彻底失败 (已抢救 %d 次): %s", index, max_retries, exc)
+                        return index, None
+        return index, None
 
     pairs = await asyncio.gather(*[_render_one(item) for item in placeholders])
     return dict(pairs)
