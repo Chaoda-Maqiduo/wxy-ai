@@ -21,6 +21,8 @@ _ENV_KEYS = (
     "NOTIFY_CALLBACK_URL",
     "THESIS_OUTLINE_MODEL",
     "THESIS_FULLTEXT_MODEL",
+    "TWELVEAI_API_KEY",
+    "TWELVEAI_IMAGE_MODEL",
 )
 
 
@@ -67,6 +69,22 @@ class Settings(BaseModel):
     # 论文系统全文阶段模型（默认偏长文推理能力）。
     thesis_fulltext_model: str = Field(
         default="deepseek-reasoner", validation_alias="THESIS_FULLTEXT_MODEL"
+    )
+
+    # --- 备份：OpenRouter API 生图大模型接入（如果需要可放开并注释下面12AI即可） ---
+    # openrouter_api_key: str = Field(
+    #     default="", validation_alias="OPENROUTER_API_KEY"
+    # )
+    # openrouter_image_model: str = Field(
+    #     default="google/gemini-3.1-flash-image-preview", validation_alias="OPENROUTER_IMAGE_MODEL"
+    # )
+
+    # 12AI 中转站生图配置 (Gemini)
+    twelveai_api_key: str = Field(
+        default="", validation_alias="TWELVEAI_API_KEY"
+    )
+    twelveai_image_model: str = Field(
+        default="gemini-3-pro-image-preview", validation_alias="TWELVEAI_IMAGE_MODEL"
     )
 
 

@@ -5,6 +5,8 @@ from app.services.thesis.docx_builder import build_word_document
 from app.services.thesis.fulltext_service import generate_fulltext
 from app.services.thesis.image_renderer import (
     PlaceholderImageGenerator,
+    # OpenRouterImageGenerator,
+    TwelveAIGenerator,
     render_all_figures,
 )
 from app.services.thesis.outline_service import generate_outline
@@ -56,7 +58,23 @@ async def generate_thesis_document(
     placeholders = extract_figure_placeholders(full_text)
     mermaid_list, ai_image_list, fallback_list = split_by_render_method(placeholders)
 
-    image_generator = PlaceholderImageGenerator()
+    from app.config import get_settings
+    settings = get_settings()
+    
+    # if settings.openrouter_api_key:
+    #     image_generator = OpenRouterImageGenerator(
+    #         api_key=settings.openrouter_api_key,
+    #         model=settings.openrouter_image_model,
+    #     )
+    # elif settings.twelveai_api_key:
+    if settings.twelveai_api_key:
+        image_generator = TwelveAIGenerator(
+            api_key=settings.twelveai_api_key,
+            model=settings.twelveai_image_model,
+        )
+    else:
+        image_generator = PlaceholderImageGenerator()
+        
     image_paths = await render_all_figures(
         placeholders=placeholders,
         image_generator=image_generator,

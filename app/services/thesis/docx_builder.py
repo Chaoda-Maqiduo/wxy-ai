@@ -4,6 +4,7 @@ from pathlib import Path
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.shared import Inches, Pt, Cm
+from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 
 FIGURE_BLOCK_PATTERN = r"<<FIGURE>>\s*.*?\s*<</FIGURE>>"
@@ -40,8 +41,28 @@ def _collect_table_lines(lines: list[str], start: int) -> tuple[list[list[str]],
     return rows, i
 
 
+def _add_markdown_text_to_paragraph(paragraph, text: str, is_header: bool = False):
+    """解析 Markdown 内联加粗并添加到段落中"""
+    parts = re.split(r'(\*\*.*?\*\*)', text)
+    for part in parts:
+        if not part:
+            continue
+        if part.startswith('**') and part.endswith('**') and len(part) >= 4:
+            run = paragraph.add_run(part[2:-2])
+            run.bold = True
+        else:
+            run = paragraph.add_run(part)
+            if is_header:
+                run.bold = True
+        
+        # 统一设置字体
+        run.font.name = "宋体"
+        run.font.size = Pt(10.5)  # 五号字
+        run._element.rPr.rFonts.set(qn("w:eastAsia"), "宋体")
+
+
 def _add_table(document: Document, rows: list[list[str]]) -> None:
-    """将二维数据写入 Word 表格，首行作为表头加粗。"""
+    """将二维数据写入 Word 表格，处理内联加粗，首行作为表头加粗。"""
     if not rows:
         return
 
@@ -53,15 +74,9 @@ def _add_table(document: Document, rows: list[list[str]]) -> None:
             if j >= num_cols:
                 continue
             cell = table.rows[i].cells[j]
-            cell.text = cell_text
-            # 设置单元格内段落字体。
-            for paragraph in cell.paragraphs:
-                for run in paragraph.runs:
-                    run.font.name = "宋体"
-                    run.font.size = Pt(10.5)  # 五号字
-                    run._element.rPr.rFonts.set(qn("w:eastAsia"), "宋体")
-                    if i == 0:
-                        run.bold = True
+            # Word 新建单元格默认自带一个空段落
+            p = cell.paragraphs[0] if cell.paragraphs else cell.add_paragraph()
+            _add_markdown_text_to_paragraph(p, cell_text, is_header=(i == 0))
 
 
 # ---------- 文档样式初始化 ----------
@@ -99,7 +114,7 @@ def _init_styles(document: Document) -> None:
 
 
 def _setup_page(document: Document) -> None:
-    """设置 A4 页面、页边距。"""
+    """设置 A4 页面、页边距、页脚页码。"""
     section = document.sections[0]
     section.page_width = Cm(21)
     section.page_height = Cm(29.7)
@@ -108,8 +123,99 @@ def _setup_page(document: Document) -> None:
     section.left_margin = Cm(3)
     section.right_margin = Cm(2.5)
 
+    # 页脚：居中页码。
+    footer = section.footer
+    footer.is_linked_to_previous = False
+    paragraph = footer.paragraphs[0] if footer.paragraphs else footer.add_paragraph()
+    paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+    # 插入 PAGE 域代码：Word 会自动替换为当前页码。
+    run = paragraph.add_run()
+    r = run._element
+
+    fld_begin = OxmlElement("w:fldChar")
+    fld_begin.set(qn("w:fldCharType"), "begin")
+    r.append(fld_begin)
+
+    instr = OxmlElement("w:instrText")
+    instr.set(qn("xml:space"), "preserve")
+    instr.text = " PAGE "
+    r.append(instr)
+
+    fld_sep = OxmlElement("w:fldChar")
+    fld_sep.set(qn("w:fldCharType"), "separate")
+    r.append(fld_sep)
+
+    # 占位文本（Word 打开后自动替换为真实页码）。
+    num_run = paragraph.add_run("1")
+    num_run.font.size = Pt(10)
+    num_run.font.name = "Times New Roman"
+
+    fld_end = OxmlElement("w:fldChar")
+    fld_end.set(qn("w:fldCharType"), "end")
+    r2 = paragraph.add_run()._element
+    r2.append(fld_end)
+
 
 # ---------- 主构建函数 ----------
+
+
+def _add_toc_page(document: Document) -> None:
+    """
+    在文档中插入目录页（Table of Contents）。
+
+    通过 Word 域代码（Field Code）插入 TOC 指令。
+    用户在 Word 中打开文档后，右键目录选择"更新域"即可
+    生成带页码的完整目录；也可按 Ctrl+A, F9 全文刷新。
+    """
+    # 目录标题。
+    toc_title = document.add_heading("目  录", level=1)
+    toc_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+    # 创建段落放置 TOC 域代码。
+    paragraph = document.add_paragraph()
+    run = paragraph.add_run()
+    r_element = run._element
+
+    # <w:fldChar w:fldCharType="begin" w:dirty="true"/>
+    # 设置 dirty="true" 可以让这部分域代码在文件打开时强制重算（部分 Word 版本会静默更新）
+    fld_begin = OxmlElement("w:fldChar")
+    fld_begin.set(qn("w:fldCharType"), "begin")
+    fld_begin.set(qn("w:dirty"), "true")
+    r_element.append(fld_begin)
+
+    # <w:instrText> TOC \o "1-3" \h \z \u </w:instrText>
+    instr = OxmlElement("w:instrText")
+    instr.set(qn("xml:space"), "preserve")
+    instr.text = ' TOC \\o "1-3" \\h \\z \\u '
+    r_element.append(instr)
+
+    # <w:fldChar w:fldCharType="separate"/>
+    fld_sep = OxmlElement("w:fldChar")
+    fld_sep.set(qn("w:fldCharType"), "separate")
+    r_element.append(fld_sep)
+
+    # 占位文本不再需要提示用户手动点击了
+    hint = paragraph.add_run("目录正在自动生成中...")
+    hint.font.size = Pt(10)
+
+    # <w:fldChar w:fldCharType="end"/>
+    fld_end = OxmlElement("w:fldChar")
+    fld_end.set(qn("w:fldCharType"), "end")
+    r_end = paragraph.add_run()._element
+    r_end.append(fld_end)
+
+    # 注入文档级别的全局设置：强制在打开时询问是否更新所有域
+    settings = document.settings.element
+    update_fields = OxmlElement('w:updateFields')
+    update_fields.set(qn('w:val'), 'true')
+    settings.append(update_fields)
+
+    # 目录后分页。
+    document.add_page_break()
+
+
+
 
 
 def build_word_document(
@@ -125,6 +231,9 @@ def build_word_document(
 
     _setup_page(document)
     _init_styles(document)
+
+    # 在正文之前插入目录页。
+    _add_toc_page(document)
 
     segments = re.split(FIGURE_BLOCK_PATTERN, full_text, flags=re.DOTALL)
     placeholder_idx = 0
@@ -156,11 +265,12 @@ def build_word_document(
 
             # 表标题（"表X-X ..." 格式）→ 居中小号。
             if re.match(r"^表\d+-\d+\s", line):
-                p = document.add_paragraph(line)
+                p = document.add_paragraph()
                 p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                if p.runs:
-                    p.runs[0].font.size = Pt(10)
-                    p.runs[0].font.name = "宋体"
+                _add_markdown_text_to_paragraph(p, line)
+                for run in p.runs:
+                    run.font.size = Pt(10)
+                    run.font.name = "宋体"
                 i += 1
                 continue
 
@@ -178,16 +288,19 @@ def build_word_document(
 
             # 无序列表。
             elif line.startswith("- "):
-                document.add_paragraph(line[2:], style="List Bullet")
+                p = document.add_paragraph(style="List Bullet")
+                _add_markdown_text_to_paragraph(p, line[2:])
 
             # 有序列表。
             elif re.match(r"^\d+\.\s+", line):
                 text = re.sub(r"^\d+\.\s+", "", line)
-                document.add_paragraph(text, style="List Number")
+                p = document.add_paragraph(style="List Number")
+                _add_markdown_text_to_paragraph(p, text)
 
             # 普通段落。
             else:
-                document.add_paragraph(line)
+                p = document.add_paragraph()
+                _add_markdown_text_to_paragraph(p, line)
 
             i += 1
 
@@ -200,7 +313,8 @@ def build_word_document(
         has_image = bool(image_path and Path(image_path).exists())
 
         if has_image and image_path:
-            document.add_picture(image_path, width=Inches(5.5))
+            # 页面可用宽度 = 21cm - 3cm左 - 2.5cm右 = 15.5cm
+            document.add_picture(image_path, width=Cm(15.5))
             document.paragraphs[-1].alignment = WD_ALIGN_PARAGRAPH.CENTER
 
         caption = placeholder.get("caption", f"图{placeholder_idx + 1}")
