@@ -1,6 +1,8 @@
+import asyncio
 import logging
 from dataclasses import dataclass
 
+from app.services.thesis.abstract_service import generate_abstracts, generate_acknowledgment
 from app.services.thesis.docx_builder import build_word_document
 from app.services.thesis.fulltext_service import generate_fulltext
 from app.services.thesis.image_renderer import (
@@ -14,9 +16,19 @@ from app.services.thesis.placeholder import (
     extract_figure_placeholders,
     split_by_render_method,
 )
+from app.services.thesis.reference_service import generate_references
 from app.services.thesis.utils import sanitize_filename
 
 logger = logging.getLogger(__name__)
+
+
+async def _best_effort(coro, default, label: str):
+    """锦上添花环节的降级包装：失败不影响主文档输出。"""
+    try:
+        return await coro
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[best_effort] %s 失败，使用默认值。原因: %s", label, exc)
+        return default
 
 
 @dataclass
@@ -27,6 +39,7 @@ class ThesisResult:
     docx_path: str
     figure_count: int = 0
     mermaid_count: int = 0
+    chart_count: int = 0
     ai_image_count: int = 0
     fallback_count: int = 0
     fulltext_char_count: int = 0
@@ -37,6 +50,13 @@ async def generate_thesis_document(
     task_id: str,
     title: str,
     outline: str,
+    target_word_count: int = 8000,
+    author: str = "作者姓名",
+    advisor: str = "指导教师",
+    degree_type: str = "学士",
+    major: str = "专业名称",
+    school: str = "XX大学XX学院",
+    year_month: str = "",
 ) -> ThesisResult:
     """
     论文生成主流程（阶段② + ②.5 + ②.7 + ③）。
@@ -47,7 +67,7 @@ async def generate_thesis_document(
     output_dir = f"app/output/{task_id}"
     safe_title = sanitize_filename(title)
 
-    full_text = await generate_fulltext(outline)
+    full_text = await generate_fulltext(outline, target_word_count=target_word_count)
 
     char_count = len(full_text)
     truncation_warning = False
@@ -55,8 +75,20 @@ async def generate_thesis_document(
         logger.warning("全文仅 %d 字，可能存在截断", char_count)
         truncation_warning = True
 
+    default_abstract = {
+        "abstract_zh": "",
+        "keywords_zh": "",
+        "abstract_en": "",
+        "keywords_en": "",
+    }
+    abstract_data, acknowledgment, references = await asyncio.gather(
+        _best_effort(generate_abstracts(full_text), default_abstract, "摘要生成"),
+        _best_effort(generate_acknowledgment(title, advisor), "", "致谢生成"),
+        _best_effort(generate_references(title, outline), "", "参考文献生成"),
+    )
+
     placeholders = extract_figure_placeholders(full_text)
-    mermaid_list, ai_image_list, fallback_list = split_by_render_method(placeholders)
+    mermaid_list, chart_list, ai_image_list, fallback_list = split_by_render_method(placeholders)
 
     from app.config import get_settings
     settings = get_settings()
@@ -86,6 +118,19 @@ async def generate_thesis_document(
         placeholders=placeholders,
         image_paths=image_paths,
         output_path=f"{output_dir}/论文_{safe_title}.docx",
+        title=title,
+        author=author,
+        advisor=advisor,
+        degree_type=degree_type,
+        major=major,
+        school=school,
+        year_month=year_month,
+        abstract_zh=abstract_data.get("abstract_zh", ""),
+        abstract_en=abstract_data.get("abstract_en", ""),
+        keywords_zh=abstract_data.get("keywords_zh", ""),
+        keywords_en=abstract_data.get("keywords_en", ""),
+        acknowledgment=acknowledgment,
+        references=references,
     )
 
     return ThesisResult(
@@ -93,6 +138,7 @@ async def generate_thesis_document(
         docx_path=docx_path,
         figure_count=len(placeholders),
         mermaid_count=len(mermaid_list),
+        chart_count=len(chart_list),
         ai_image_count=len(ai_image_list),
         fallback_count=len(fallback_list),
         fulltext_char_count=char_count,

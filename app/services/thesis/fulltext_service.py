@@ -18,9 +18,15 @@ def _build_fulltext_chain():
     return THESIS_FULLTEXT_PROMPT | llm | StrOutputParser()
 
 
-async def generate_fulltext(outline: str) -> str:
+async def generate_fulltext(outline: str, target_word_count: int = 8000) -> str:
     """阶段②：根据大纲生成论文正文（含图片占位符）。"""
 
     chain = _build_fulltext_chain()
-    result = await chain.ainvoke({"outline": outline})
+    result = await chain.ainvoke(
+        {
+            "outline": outline,
+            "target_word_count": target_word_count,
+            "target_word_count_max": target_word_count + 1000,
+        }
+    )
     return result.strip()

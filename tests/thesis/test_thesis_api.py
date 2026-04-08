@@ -47,10 +47,18 @@ def test_outline_title_too_short_returns_422(client: TestClient) -> None:
 
 
 def test_generate_and_status_flow(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
-    async def fake_run_generate(task_id: str, title: str, outline: str) -> None:
+    async def fake_run_generate(
+        task_id: str,
+        title: str,
+        outline: str,
+        cover_kwargs: dict | None = None,
+    ) -> None:
         assert task_id
         assert title
         assert outline
+        assert cover_kwargs is not None
+        assert isinstance(cover_kwargs, dict)
+        assert cover_kwargs["target_word_count"] == 12000
 
     monkeypatch.setattr(thesis_api, "_run_generate", fake_run_generate)
 
@@ -59,6 +67,7 @@ def test_generate_and_status_flow(client: TestClient, monkeypatch: pytest.Monkey
         json={
             "title": "测试论文",
             "outline": "第1章 绪论\n" + "正文" * 30,
+            "target_word_count": 12000,
         },
     )
 
@@ -75,6 +84,7 @@ def test_generate_and_status_flow(client: TestClient, monkeypatch: pytest.Monkey
         message="论文生成完成",
         figure_count=3,
         mermaid_count=2,
+        chart_count=1,
         ai_image_count=1,
         fallback_count=0,
         fulltext_char_count=8200,
@@ -86,7 +96,21 @@ def test_generate_and_status_flow(client: TestClient, monkeypatch: pytest.Monkey
     assert payload["status"] == "completed"
     assert payload["figure_count"] == 3
     assert payload["mermaid_count"] == 2
+    assert payload["chart_count"] == 1
     assert payload["ai_image_count"] == 1
+
+
+def test_generate_invalid_target_word_count_returns_422(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/thesis/generate",
+        json={
+            "title": "测试论文",
+            "outline": "第1章 绪论\n" + "正文" * 30,
+            "target_word_count": 9000,
+        },
+    )
+
+    assert response.status_code == 422
 
 
 def test_status_utils_roundtrip(client: TestClient) -> None:
@@ -121,7 +145,12 @@ def test_download_completed_returns_docx(client: TestClient, tmp_path: Path) -> 
     docx_path = output_dir / "论文_测试.docx"
     docx_path.write_bytes(b"fake docx payload")
 
-    thesis_api._write_status(task_id, "completed", message="论文生成完成")
+    thesis_api._write_status(
+        task_id,
+        "completed",
+        message="论文生成完成",
+        docx_path=str(docx_path),
+    )
 
     response = client.get(f"/api/v1/thesis/download/{task_id}")
 

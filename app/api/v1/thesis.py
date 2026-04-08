@@ -63,18 +63,31 @@ def _result_value(result: Any, key: str, default: Any) -> Any:
     return getattr(result, key, default)
 
 
-async def _run_generate(task_id: str, title: str, outline: str) -> None:
+async def _run_generate(
+    task_id: str,
+    title: str,
+    outline: str,
+    cover_kwargs: dict[str, Any] | None = None,
+) -> None:
     """后台执行论文生成流程并更新任务状态。"""
 
+    cover_kwargs = cover_kwargs or {}
     try:
         generate_document = _load_generate_document()
-        result = await generate_document(task_id=task_id, title=title, outline=outline)
+        result = await generate_document(
+            task_id=task_id,
+            title=title,
+            outline=outline,
+            **cover_kwargs,
+        )
         _write_status(
             task_id,
             "completed",
             message="论文生成完成",
+            docx_path=_result_value(result, "docx_path", ""),
             figure_count=_result_value(result, "figure_count", 0),
             mermaid_count=_result_value(result, "mermaid_count", 0),
+            chart_count=_result_value(result, "chart_count", 0),
             ai_image_count=_result_value(result, "ai_image_count", 0),
             fallback_count=_result_value(result, "fallback_count", 0),
             fulltext_char_count=_result_value(result, "fulltext_char_count", 0),
@@ -108,7 +121,16 @@ async def generate_document(
 
     task_id = uuid.uuid4().hex[:12]
     _write_status(task_id, "pending", message="正在生成论文...")
-    background_tasks.add_task(_run_generate, task_id, req.title, req.outline)
+    cover_kwargs = {
+        "target_word_count": req.target_word_count,
+        "author": req.author,
+        "advisor": req.advisor,
+        "degree_type": req.degree_type,
+        "major": req.major,
+        "school": req.school,
+        "year_month": req.year_month,
+    }
+    background_tasks.add_task(_run_generate, task_id, req.title, req.outline, cover_kwargs)
     return GenerateSubmitResponse(task_id=task_id)
 
 
@@ -135,17 +157,18 @@ async def download_document(task_id: str) -> FileResponse:
             detail=f"任务状态为 {data['status']}，无法下载",
         )
 
-    output_dir = OUTPUT_ROOT / task_id
-    docx_files = list(output_dir.glob("*.docx"))
-    if not docx_files:
+    docx_path = data.get("docx_path", "")
+    if not docx_path:
+        raise HTTPException(status_code=404, detail="文档文件不存在")
+    path_obj = Path(docx_path)
+    if not path_obj.exists():
         raise HTTPException(status_code=404, detail="文档文件不存在")
 
-    docx_path = docx_files[0]
     return FileResponse(
-        path=str(docx_path),
+        path=str(path_obj),
         media_type=(
             "application/vnd.openxmlformats-officedocument."
             "wordprocessingml.document"
         ),
-        filename=docx_path.name,
+        filename=path_obj.name,
     )

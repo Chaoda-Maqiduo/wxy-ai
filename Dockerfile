@@ -1,4 +1,4 @@
-﻿# syntax=docker/dockerfile:1
+# syntax=docker/dockerfile:1
 
 ARG PYTHON_VERSION=3.13.3
 
@@ -34,6 +34,7 @@ WORKDIR /app
 # Run as non-root user in container.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     nodejs npm \
+    libreoffice-writer \
     && npm install -g @mermaid-js/mermaid-cli \
     && apt-get clean && rm -rf /var/lib/apt/lists/* \
     && addgroup --system app && adduser --system --ingroup app app

@@ -23,6 +23,7 @@ _ENV_KEYS = (
     "THESIS_FULLTEXT_MODEL",
     "TWELVEAI_API_KEY",
     "TWELVEAI_IMAGE_MODEL",
+    "SERPAPI_KEY",
 )
 
 
@@ -86,6 +87,8 @@ class Settings(BaseModel):
     twelveai_image_model: str = Field(
         default="gemini-3-pro-image-preview", validation_alias="TWELVEAI_IMAGE_MODEL"
     )
+    # SerpAPI key for Google Scholar reference search (optional).
+    serpapi_key: str = Field(default="", validation_alias="SERPAPI_KEY")
 
 
 @lru_cache

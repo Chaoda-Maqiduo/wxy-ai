@@ -1,35 +1,209 @@
+import datetime
+import logging
+import os
 import re
+import shutil
+import subprocess
+import tempfile
 from pathlib import Path
 
 from docx import Document
+from docx.enum.section import WD_SECTION
 from docx.enum.text import WD_ALIGN_PARAGRAPH
-from docx.shared import Inches, Pt, Cm
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
+from docx.shared import Cm, Pt, RGBColor
+from PIL import Image
 
 FIGURE_BLOCK_PATTERN = r"<<FIGURE>>\s*.*?\s*<</FIGURE>>"
+
+
+def _set_run_font(
+    run,
+    zh_font: str = "宋体",
+    en_font: str = "Times New Roman",
+    size_pt: float | None = None,
+    bold: bool | None = None,
+    underline: bool | None = None,
+    color_rgb: RGBColor | None = None,
+) -> None:
+    """统一设置 run 的中英文字体、字号和样式。"""
+    r_pr = run._element.get_or_add_rPr()
+    r_fonts = r_pr.get_or_add_rFonts()
+    r_fonts.set(qn("w:eastAsia"), zh_font)
+    r_fonts.set(qn("w:ascii"), en_font)
+    r_fonts.set(qn("w:hAnsi"), en_font)
+    run.font.name = en_font
+    if size_pt is not None:
+        run.font.size = Pt(size_pt)
+    if bold is not None:
+        run.bold = bold
+    if underline is not None:
+        run.underline = underline
+    if color_rgb is not None:
+        run.font.color.rgb = color_rgb
+
+
+def _apply_fixed_line_spacing(paragraph_format, pt: float = 22) -> None:
+    """应用固定值行距。"""
+    p_pr = paragraph_format._element.get_or_add_pPr()
+    for old in p_pr.findall(qn("w:spacing")):
+        p_pr.remove(old)
+    spacing = OxmlElement("w:spacing")
+    spacing.set(qn("w:line"), str(int(pt * 20)))
+    spacing.set(qn("w:lineRule"), "exact")
+    p_pr.append(spacing)
+
+
+def _restart_page_numbering(section, start: int = 1) -> None:
+    """为当前 section 重置页码起始值。"""
+    sect_pr = section._sectPr
+    for old in sect_pr.findall(qn("w:pgNumType")):
+        sect_pr.remove(old)
+    pg_num = OxmlElement("w:pgNumType")
+    pg_num.set(qn("w:start"), str(start))
+    sect_pr.append(pg_num)
+
+
+def _refresh_toc_with_libreoffice(docx_path: str) -> None:
+    """
+    调用 LibreOffice headless 对 docx 进行一次转换，触发 TOC 域重算。
+    失败仅记日志，不影响文档主流程。
+    """
+    logger = logging.getLogger(__name__)
+    soffice = shutil.which("soffice") or shutil.which("libreoffice")
+    if not soffice:
+        logger.warning("LibreOffice 未找到，TOC 需手动更新")
+        return
+
+    output_dir = str(Path(docx_path).parent)
+    try:
+        profile_root = tempfile.mkdtemp(prefix="libreoffice-profile-", dir=output_dir)
+        env = os.environ.copy()
+        env["HOME"] = profile_root
+        env["XDG_CACHE_HOME"] = profile_root
+        env["XDG_CONFIG_HOME"] = profile_root
+        result = subprocess.run(
+            [
+                soffice,
+                "--headless",
+                "--convert-to",
+                "docx",
+                "--outdir",
+                output_dir,
+                docx_path,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            env=env,
+        )
+        if result.returncode != 0:
+            logger.warning("LibreOffice TOC 刷新失败: %s", result.stderr.strip())
+        else:
+            logger.info("LibreOffice TOC 刷新成功: %s", docx_path)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("LibreOffice 调用异常: %s", exc)
+
+
+def _has_libreoffice() -> bool:
+    """判断当前环境是否可用 LibreOffice。"""
+    return bool(shutil.which("soffice") or shutil.which("libreoffice"))
+
+
+def _clear_header_footer(section) -> None:
+    """清空当前 section 的页眉页脚。"""
+    section.header.is_linked_to_previous = False
+    section.footer.is_linked_to_previous = False
+    for paragraph in section.header.paragraphs:
+        paragraph.clear()
+    for paragraph in section.footer.paragraphs:
+        paragraph.clear()
+
+
+def _copy_page_layout_from_first(document: Document, section) -> None:
+    """让新增 section 继承第一页的纸张和页边距设置。"""
+    first = document.sections[0]
+    section.page_width = first.page_width
+    section.page_height = first.page_height
+    section.top_margin = first.top_margin
+    section.bottom_margin = first.bottom_margin
+    section.left_margin = first.left_margin
+    section.right_margin = first.right_margin
+
+
+def _make_blank_section(document: Document):
+    """新增一个空白 section，不带页眉页脚。"""
+    section = document.add_section(WD_SECTION.NEW_PAGE)
+    _copy_page_layout_from_first(document, section)
+    _clear_header_footer(section)
+    return section
+
+
+def _setup_body_section(document: Document, title: str) -> None:
+    """配置正文 section 的页眉和页脚页码。"""
+    section = document.sections[-1]
+    _copy_page_layout_from_first(document, section)
+    _clear_header_footer(section)
+    _restart_page_numbering(section, start=1)
+
+    header = section.header
+    p_header = header.paragraphs[0] if header.paragraphs else header.add_paragraph()
+    p_header.clear()
+    p_header.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    run_h = p_header.add_run(title)
+    _set_run_font(run_h, size_pt=10)
+
+    footer = section.footer
+    p_footer = footer.paragraphs[0] if footer.paragraphs else footer.add_paragraph()
+    p_footer.clear()
+    p_footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+    run_f = p_footer.add_run()
+    r_element = run_f._element
+
+    fld_begin = OxmlElement("w:fldChar")
+    fld_begin.set(qn("w:fldCharType"), "begin")
+    r_element.append(fld_begin)
+
+    instr = OxmlElement("w:instrText")
+    instr.set(qn("xml:space"), "preserve")
+    instr.text = " PAGE "
+    r_element.append(instr)
+
+    fld_sep = OxmlElement("w:fldChar")
+    fld_sep.set(qn("w:fldCharType"), "separate")
+    r_element.append(fld_sep)
+
+    num_run = p_footer.add_run("1")
+    _set_run_font(
+        num_run,
+        zh_font="Times New Roman",
+        en_font="Times New Roman",
+        size_pt=10,
+    )
+
+    fld_end = OxmlElement("w:fldChar")
+    fld_end.set(qn("w:fldCharType"), "end")
+    p_footer.add_run()._element.append(fld_end)
+
 
 # ---------- Markdown 表格解析工具 ----------
 
 
 def _is_table_separator(line: str) -> bool:
-    """判断是否为 Markdown 表格的分隔行（如 |---|---|）。"""
+    """判断是否为 Markdown 表格分隔行。"""
     cells = [c.strip() for c in line.strip().strip("|").split("|")]
     return all(re.match(r"^[-:]+$", c) for c in cells) if cells else False
 
 
 def _parse_table_line(line: str) -> list[str]:
-    """解析单行表格，返回各列文本。"""
+    """解析单行 Markdown 表格。"""
     return [c.strip() for c in line.strip().strip("|").split("|")]
 
 
 def _collect_table_lines(lines: list[str], start: int) -> tuple[list[list[str]], int]:
-    """
-    从 start 开始收集连续的 Markdown 表格行。
-
-    返回 (二维数据, 下一个非表格行的索引)。
-    分隔行会被跳过，不计入数据。
-    """
+    """收集连续的 Markdown 表格行。"""
     rows: list[list[str]] = []
     i = start
     while i < len(lines) and "|" in lines[i]:
@@ -41,33 +215,32 @@ def _collect_table_lines(lines: list[str], start: int) -> tuple[list[list[str]],
     return rows, i
 
 
-def _add_markdown_text_to_paragraph(paragraph, text: str, is_header: bool = False, is_table: bool = False):
-    """解析 Markdown 内联加粗并添加到段落中"""
-    # 移除转码过程或大模型常常加上的 '~' 约等于号或误标的点
+def _add_markdown_text_to_paragraph(
+    paragraph,
+    text: str,
+    is_header: bool = False,
+    is_table: bool = False,
+) -> None:
+    """解析 Markdown 内联加粗并写入段落。"""
     text = text.replace("~", "")
-    
-    parts = re.split(r'(\*\*.*?\*\*)', text)
+    parts = re.split(r"(\*\*.*?\*\*)", text)
     for part in parts:
         if not part:
             continue
-        if part.startswith('**') and part.endswith('**') and len(part) >= 4:
+        if part.startswith("**") and part.endswith("**") and len(part) >= 4:
             run = paragraph.add_run(part[2:-2])
             run.bold = True
         else:
             run = paragraph.add_run(part)
             if is_header:
                 run.bold = True
-        
-        # 强制指定中文字体，确保不发生回退
-        run.font.name = "宋体"
-        run._element.rPr.rFonts.set(qn("w:eastAsia"), "宋体")
-        # 如果是表格内容，强行缩小为五号字
+        _set_run_font(run, zh_font="宋体")
         if is_table:
             run.font.size = Pt(10.5)
 
 
 def _add_table(document: Document, rows: list[list[str]]) -> None:
-    """将二维数据写入 Word 表格，处理内联加粗，首行作为表头加粗。"""
+    """将二维数据写入 Word 表格。"""
     if not rows:
         return
 
@@ -79,9 +252,14 @@ def _add_table(document: Document, rows: list[list[str]]) -> None:
             if j >= num_cols:
                 continue
             cell = table.rows[i].cells[j]
-            # Word 新建单元格默认自带一个空段落
-            p = cell.paragraphs[0] if cell.paragraphs else cell.add_paragraph()
-            _add_markdown_text_to_paragraph(p, cell_text, is_header=(i == 0), is_table=True)
+            paragraph = cell.paragraphs[0] if cell.paragraphs else cell.add_paragraph()
+            paragraph.paragraph_format.first_line_indent = Pt(0)
+            _add_markdown_text_to_paragraph(
+                paragraph,
+                cell_text,
+                is_header=(i == 0),
+                is_table=True,
+            )
 
 
 # ---------- 文档样式初始化 ----------
@@ -89,37 +267,45 @@ def _add_table(document: Document, rows: list[list[str]]) -> None:
 
 def _init_styles(document: Document) -> None:
     """设置文档默认样式和标题样式。"""
-    # 正文样式：宋体 12pt，1.5 倍行距。
     normal_style = document.styles["Normal"]
     normal_style.font.name = "宋体"
     normal_style.font.size = Pt(12)
-    normal_style.paragraph_format.line_spacing = 1.5
-    # 确保中文字体生效。
-    normal_style.element.rPr.rFonts.set(qn("w:eastAsia"), "宋体")
+    normal_style.paragraph_format.first_line_indent = Cm(0.74)
+    normal_style.paragraph_format.space_before = Pt(0)
+    normal_style.paragraph_format.space_after = Pt(6)
+    _apply_fixed_line_spacing(normal_style.paragraph_format, pt=22)
 
-    # 标题样式：黑体，各级字号递减。
+    normal_r_pr = normal_style.element.get_or_add_rPr()
+    normal_r_fonts = normal_r_pr.get_or_add_rFonts()
+    normal_r_fonts.set(qn("w:eastAsia"), "宋体")
+    normal_r_fonts.set(qn("w:ascii"), "Times New Roman")
+    normal_r_fonts.set(qn("w:hAnsi"), "Times New Roman")
+
     heading_config = [
-        (1, 18, True),   # Heading 1: 小二号、加粗
-        (2, 16, True),   # Heading 2: 三号、加粗
-        (3, 14, True),   # Heading 3: 四号、加粗
+        (1, 18, True),
+        (2, 16, True),
+        (3, 14, True),
     ]
     for level, size, bold in heading_config:
         style = document.styles[f"Heading {level}"]
         style.font.name = "黑体"
         style.font.size = Pt(size)
         style.font.bold = bold
-        style.font.color.rgb = None  # 清除默认蓝色，使用黑色
-        style.element.rPr.rFonts.set(qn("w:eastAsia"), "黑体")
-        # 段前段后间距。
+        style.font.color.rgb = RGBColor(0, 0, 0)
+        style.element.get_or_add_rPr().get_or_add_rFonts().set(
+            qn("w:eastAsia"), "黑体"
+        )
         style.paragraph_format.space_before = Pt(12)
         style.paragraph_format.space_after = Pt(6)
+        if level == 1:
+            style.paragraph_format.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
 
 # ---------- 页面设置 ----------
 
 
 def _setup_page(document: Document) -> None:
-    """设置 A4 页面、页边距、页脚页码。"""
+    """设置首页 section 的页面尺寸和页边距。"""
     section = document.sections[0]
     section.page_width = Cm(21)
     section.page_height = Cm(29.7)
@@ -127,102 +313,289 @@ def _setup_page(document: Document) -> None:
     section.bottom_margin = Cm(2.5)
     section.left_margin = Cm(3)
     section.right_margin = Cm(2.5)
-
-    # 页脚：居中页码。
-    footer = section.footer
-    footer.is_linked_to_previous = False
-    paragraph = footer.paragraphs[0] if footer.paragraphs else footer.add_paragraph()
-    paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
-
-    # 插入 PAGE 域代码：Word 会自动替换为当前页码。
-    run = paragraph.add_run()
-    r = run._element
-
-    fld_begin = OxmlElement("w:fldChar")
-    fld_begin.set(qn("w:fldCharType"), "begin")
-    r.append(fld_begin)
-
-    instr = OxmlElement("w:instrText")
-    instr.set(qn("xml:space"), "preserve")
-    instr.text = " PAGE "
-    r.append(instr)
-
-    fld_sep = OxmlElement("w:fldChar")
-    fld_sep.set(qn("w:fldCharType"), "separate")
-    r.append(fld_sep)
-
-    # 占位文本（Word 打开后自动替换为真实页码）。
-    num_run = paragraph.add_run("1")
-    num_run.font.size = Pt(10)
-    num_run.font.name = "Times New Roman"
-
-    fld_end = OxmlElement("w:fldChar")
-    fld_end.set(qn("w:fldCharType"), "end")
-    r2 = paragraph.add_run()._element
-    r2.append(fld_end)
+    _clear_header_footer(section)
 
 
-# ---------- 主构建函数 ----------
+# ---------- 固定页面 ----------
 
 
-def _add_toc_page(document: Document) -> None:
-    """
-    在文档中插入目录页（Table of Contents）。
+def _add_cover_page(
+    document: Document,
+    title: str,
+    author: str,
+    advisor: str,
+    degree_type: str,
+    major: str,
+    school: str,
+    year_month: str,
+) -> None:
+    """构建封面页。"""
 
-    通过 Word 域代码（Field Code）插入 TOC 指令。
-    用户在 Word 中打开文档后，右键目录选择"更新域"即可
-    生成带页码的完整目录；也可按 Ctrl+A, F9 全文刷新。
-    """
-    # 目录标题。
-    toc_title = document.add_heading("目  录", level=1)
-    toc_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    def _blank(lines: int) -> None:
+        for _ in range(lines):
+            paragraph = document.add_paragraph()
+            paragraph.paragraph_format.first_line_indent = Pt(0)
+            paragraph.paragraph_format.space_before = Pt(0)
+            paragraph.paragraph_format.space_after = Pt(0)
 
-    # 创建段落放置 TOC 域代码。
+    _blank(6)
+
+    p_main = document.add_paragraph()
+    p_main.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p_main.paragraph_format.first_line_indent = Pt(0)
+    run_main = p_main.add_run("学士学位论文")
+    _set_run_font(run_main, zh_font="黑体", size_pt=36, bold=True)
+    p_main.paragraph_format.space_after = Pt(24)
+
+    p_title = document.add_paragraph()
+    p_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p_title.paragraph_format.first_line_indent = Pt(0)
+    run_title = p_title.add_run(title)
+    _set_run_font(run_title, size_pt=18, underline=True)
+    p_title.paragraph_format.space_after = Pt(36)
+
+    fields = [
+        ("作者姓名", author),
+        ("指导教师", advisor),
+        ("学位类别", degree_type),
+        ("专    业", major),
+        ("学院（系）", school),
+    ]
+    for label, value in fields:
+        paragraph = document.add_paragraph()
+        paragraph.paragraph_format.left_indent = Cm(3.5)
+        paragraph.paragraph_format.first_line_indent = Pt(0)
+        paragraph.paragraph_format.space_before = Pt(6)
+        paragraph.paragraph_format.space_after = Pt(6)
+        run_label = paragraph.add_run(f"{label}：")
+        _set_run_font(run_label, size_pt=14)
+        run_value = paragraph.add_run(value)
+        _set_run_font(run_value, size_pt=14, bold=True)
+
+    _blank(8)
+
+    if not year_month:
+        now = datetime.datetime.now()
+        year_month = f"{now.year} 年 {now.month} 月"
+
+    p_date = document.add_paragraph()
+    p_date.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p_date.paragraph_format.first_line_indent = Pt(0)
+    run_date = p_date.add_run(year_month)
+    _set_run_font(run_date, size_pt=14, bold=True)
+
+    document.add_page_break()
+
+
+def _add_abstract_zh_page(document: Document, abstract: str, keywords: str) -> None:
+    """中文摘要页。"""
+    p_title = document.add_paragraph()
+    p_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p_title.paragraph_format.first_line_indent = Pt(0)
+    p_title.paragraph_format.space_after = Pt(12)
+    run_title = p_title.add_run("摘  要")
+    _set_run_font(run_title, zh_font="黑体", size_pt=16, bold=True)
+
+    if abstract:
+        for para_text in abstract.split("\n"):
+            para_text = para_text.strip()
+            if not para_text:
+                continue
+            paragraph = document.add_paragraph()
+            paragraph.paragraph_format.first_line_indent = Pt(24)
+            run = paragraph.add_run(para_text)
+            _set_run_font(run, size_pt=12)
+
+    if keywords:
+        p_kw = document.add_paragraph()
+        p_kw.paragraph_format.first_line_indent = Pt(0)
+        p_kw.paragraph_format.space_before = Pt(12)
+        run_label = p_kw.add_run("关键词：")
+        _set_run_font(run_label, size_pt=12, bold=True)
+        run_kw = p_kw.add_run(keywords)
+        _set_run_font(run_kw, size_pt=12)
+
+    document.add_page_break()
+
+
+def _add_abstract_en_page(document: Document, abstract: str, keywords: str) -> None:
+    """英文摘要页。"""
+    p_title = document.add_paragraph()
+    p_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p_title.paragraph_format.first_line_indent = Pt(0)
+    p_title.paragraph_format.space_after = Pt(12)
+    run_title = p_title.add_run("Abstract")
+    _set_run_font(
+        run_title,
+        zh_font="Times New Roman",
+        en_font="Times New Roman",
+        size_pt=16,
+        bold=True,
+    )
+
+    if abstract:
+        for para_text in abstract.split("\n"):
+            para_text = para_text.strip()
+            if not para_text:
+                continue
+            paragraph = document.add_paragraph()
+            paragraph.paragraph_format.first_line_indent = Pt(0)
+            paragraph.paragraph_format.space_before = Pt(6)
+            run = paragraph.add_run(para_text)
+            _set_run_font(
+                run,
+                zh_font="Times New Roman",
+                en_font="Times New Roman",
+                size_pt=12,
+            )
+
+    if keywords:
+        p_kw = document.add_paragraph()
+        p_kw.paragraph_format.first_line_indent = Pt(0)
+        p_kw.paragraph_format.space_before = Pt(12)
+        run_label = p_kw.add_run("Keywords: ")
+        _set_run_font(
+            run_label,
+            zh_font="Times New Roman",
+            en_font="Times New Roman",
+            size_pt=12,
+            bold=True,
+        )
+        run_kw = p_kw.add_run(keywords)
+        _set_run_font(
+            run_kw,
+            zh_font="Times New Roman",
+            en_font="Times New Roman",
+            size_pt=12,
+        )
+
+
+def _add_toc_page(document: Document, show_manual_hint: bool = True) -> None:
+    """插入目录页。"""
+    p_title = document.add_paragraph()
+    p_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p_title.paragraph_format.first_line_indent = Pt(0)
+    run_title = p_title.add_run("目  录")
+    _set_run_font(run_title, zh_font="黑体", size_pt=16, bold=True)
+
     paragraph = document.add_paragraph()
+    paragraph.paragraph_format.first_line_indent = Pt(0)
     run = paragraph.add_run()
     r_element = run._element
 
-    # <w:fldChar w:fldCharType="begin" w:dirty="true"/>
-    # 设置 dirty="true" 可以让这部分域代码在文件打开时强制重算（部分 Word 版本会静默更新）
     fld_begin = OxmlElement("w:fldChar")
     fld_begin.set(qn("w:fldCharType"), "begin")
     fld_begin.set(qn("w:dirty"), "true")
     r_element.append(fld_begin)
 
-    # <w:instrText> TOC \o "1-3" \h \z \u </w:instrText>
     instr = OxmlElement("w:instrText")
     instr.set(qn("xml:space"), "preserve")
     instr.text = ' TOC \\o "1-3" \\h \\z \\u '
     r_element.append(instr)
 
-    # <w:fldChar w:fldCharType="separate"/>
     fld_sep = OxmlElement("w:fldChar")
     fld_sep.set(qn("w:fldCharType"), "separate")
     r_element.append(fld_sep)
 
-    # 占位文本：对部分无法自动刷新目录的软件（如WPS）进行提示
-    hint = paragraph.add_run(" （目录正在底层生成中，请在此处右键并选择“更新域”即可获取最新排版目录） ")
-    hint.font.size = Pt(10)
-    from docx.shared import RGBColor
-    hint.font.color.rgb = RGBColor(128, 128, 128)
+    hint_text = " （目录生成完毕。为确版面准确，只需在 Word 中全选(Ctrl+A)后按 F9 更新，或右键此处选择“更新域”即可） "
+    hint = paragraph.add_run(hint_text)
+    _set_run_font(hint, size_pt=10, color_rgb=RGBColor(128, 128, 128))
 
-    # <w:fldChar w:fldCharType="end"/>
     fld_end = OxmlElement("w:fldChar")
     fld_end.set(qn("w:fldCharType"), "end")
-    r_end = paragraph.add_run()._element
-    r_end.append(fld_end)
+    paragraph.add_run()._element.append(fld_end)
 
-    # 注入文档级别的全局设置：强制在打开时询问是否更新所有域
     settings = document.settings.element
-    update_fields = OxmlElement('w:updateFields')
-    update_fields.set(qn('w:val'), 'true')
+    update_fields = OxmlElement("w:updateFields")
+    update_fields.set(qn("w:val"), "true")
     settings.append(update_fields)
 
-    # 目录后分页。
-    document.add_page_break()
+
+def _add_acknowledgment_page(document: Document, acknowledgment: str) -> None:
+    """致谢页。"""
+    p_title = document.add_paragraph()
+    p_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p_title.paragraph_format.first_line_indent = Pt(0)
+    p_title.paragraph_format.space_after = Pt(12)
+    run_title = p_title.add_run("致  谢")
+    _set_run_font(run_title, zh_font="黑体", size_pt=16, bold=True)
+
+    if not acknowledgment:
+        return
+
+    for para_text in acknowledgment.split("\n"):
+        para_text = para_text.strip()
+        if not para_text:
+            continue
+        paragraph = document.add_paragraph()
+        paragraph.paragraph_format.first_line_indent = Pt(24)
+        run = paragraph.add_run(para_text)
+        _set_run_font(run, size_pt=12)
 
 
+def _add_references_page(document: Document, references: str) -> None:
+    """参考文献页。"""
+    p_title = document.add_paragraph()
+    p_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p_title.paragraph_format.first_line_indent = Pt(0)
+    p_title.paragraph_format.space_after = Pt(12)
+    run_title = p_title.add_run("参考文献")
+    _set_run_font(run_title, zh_font="黑体", size_pt=16, bold=True)
 
+    if not references:
+        paragraph = document.add_paragraph()
+        paragraph.paragraph_format.first_line_indent = Pt(0)
+        run = paragraph.add_run("（参考文献未生成，可能因未配置检索服务或检索结果不足）")
+        _set_run_font(run, size_pt=12)
+        return
+
+    for line in references.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        paragraph = document.add_paragraph()
+        paragraph.paragraph_format.left_indent = Cm(0.74)
+        paragraph.paragraph_format.first_line_indent = Cm(-0.74)
+        paragraph.paragraph_format.space_before = Pt(3)
+        paragraph.paragraph_format.space_after = Pt(3)
+        run = paragraph.add_run(line)
+        _set_run_font(run, size_pt=12)
+
+
+def _insert_picture_with_constraints(
+    document: Document,
+    image_path: str,
+    max_width_cm: float = 15.5,
+    max_height_cm: float = 9.5,
+) -> None:
+    """
+    插入图片并限制最大宽高，避免图片过高导致版面被大面积占用。
+    保持原始纵横比，不做拉伸。
+    """
+    with Image.open(image_path) as image:
+        width_px, height_px = image.size
+
+    if width_px <= 0 or height_px <= 0:
+        document.add_picture(image_path, width=Cm(max_width_cm))
+        document.paragraphs[-1].alignment = WD_ALIGN_PARAGRAPH.CENTER
+        return
+
+    width_cm = max_width_cm
+    height_cm = width_cm * height_px / width_px
+    if height_cm > max_height_cm:
+        height_cm = max_height_cm
+        width_cm = height_cm * width_px / height_px
+
+    document.add_picture(image_path, width=Cm(width_cm), height=Cm(height_cm))
+    p = document.paragraphs[-1]
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    # 强制单倍行距，避免被 Normal 样式的固定值（22pt）截断导致图片被文本覆盖
+    from docx.enum.text import WD_LINE_SPACING
+    p.paragraph_format.line_spacing_rule = WD_LINE_SPACING.SINGLE
+    p.paragraph_format.first_line_indent = Pt(0)
+
+
+# ---------- 主构建函数 ----------
 
 
 def build_word_document(
@@ -230,17 +603,48 @@ def build_word_document(
     placeholders: list[dict],
     image_paths: dict[int, str | None],
     output_path: str = "app/output/thesis.docx",
+    title: str = "论文题目",
+    author: str = "作者姓名",
+    advisor: str = "指导教师",
+    degree_type: str = "学士",
+    major: str = "专业名称",
+    school: str = "XX大学XX学院",
+    year_month: str = "",
+    abstract_zh: str = "",
+    abstract_en: str = "",
+    keywords_zh: str = "",
+    keywords_en: str = "",
+    acknowledgment: str = "",
+    references: str = "",
 ) -> str:
-    """将全文文本与图片合成为 Word 文档。"""
-
+    """将论文正文、图片与前后置页面构造成 Word 文档。"""
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
     document = Document()
 
     _setup_page(document)
     _init_styles(document)
 
-    # 在正文之前插入目录页。
+    # Section 1：封面 + 中英文摘要
+    _add_cover_page(
+        document,
+        title,
+        author,
+        advisor,
+        degree_type,
+        major,
+        school,
+        year_month,
+    )
+    _add_abstract_zh_page(document, abstract_zh, keywords_zh)
+    _add_abstract_en_page(document, abstract_en, keywords_en)
+
+    # Section 2：目录
+    _make_blank_section(document)
     _add_toc_page(document)
+
+    # Section 3：正文 + 致谢 + 参考文献
+    _make_blank_section(document)
+    _setup_body_section(document, title)
 
     segments = re.split(FIGURE_BLOCK_PATTERN, full_text, flags=re.DOTALL)
     placeholder_idx = 0
@@ -251,18 +655,15 @@ def build_word_document(
         while i < len(lines):
             line = lines[i]
 
-            # 空行跳过。
             if not line:
                 i += 1
                 continue
 
-            # 分页标记。
             if line == "---pagebreak---":
                 document.add_page_break()
                 i += 1
                 continue
 
-            # Markdown 表格（以 | 开头的连续行）。
             if line.startswith("|") and "|" in line[1:]:
                 rows, next_i = _collect_table_lines(lines, i)
                 if rows:
@@ -270,48 +671,42 @@ def build_word_document(
                 i = next_i
                 continue
 
-            # 表标题（"表X-X ..." 格式）→ 居中小号。
             if re.match(r"^表\d+-\d+\s", line):
-                p = document.add_paragraph()
-                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                _add_markdown_text_to_paragraph(p, line)
-                for run in p.runs:
-                    run.font.size = Pt(10)
-                    run.font.name = "宋体"
+                paragraph = document.add_paragraph()
+                paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                paragraph.paragraph_format.first_line_indent = Pt(0)
+                _add_markdown_text_to_paragraph(paragraph, line)
+                for run in paragraph.runs:
+                    _set_run_font(run, size_pt=10)
                 i += 1
                 continue
 
-            # 标题（按 ### > ## > # 顺序匹配）。
             if line.startswith("### "):
-                document.add_heading(line[4:], level=3)
+                paragraph = document.add_heading(line[4:], level=3)
+                paragraph.paragraph_format.first_line_indent = Pt(0)
             elif line.startswith("## "):
-                document.add_heading(line[3:], level=2)
+                paragraph = document.add_heading(line[3:], level=2)
+                paragraph.paragraph_format.first_line_indent = Pt(0)
             elif line.startswith("# "):
-                document.add_heading(line[2:], level=1)
-
-            # 代码块边界标识，跳过。
+                paragraph = document.add_heading(line[2:], level=1)
+                paragraph.paragraph_format.first_line_indent = Pt(0)
             elif line.startswith("```"):
                 pass
-
-            # 无序列表。
             elif line.startswith("- "):
-                p = document.add_paragraph(style="List Bullet")
-                _add_markdown_text_to_paragraph(p, line[2:])
-
-            # 有序列表。
+                paragraph = document.add_paragraph(style="List Bullet")
+                paragraph.paragraph_format.first_line_indent = Pt(0)
+                _add_markdown_text_to_paragraph(paragraph, line[2:])
             elif re.match(r"^\d+\.\s+", line):
+                paragraph = document.add_paragraph(style="List Number")
+                paragraph.paragraph_format.first_line_indent = Pt(0)
                 text = re.sub(r"^\d+\.\s+", "", line)
-                p = document.add_paragraph(style="List Number")
-                _add_markdown_text_to_paragraph(p, text)
-
-            # 普通段落。
+                _add_markdown_text_to_paragraph(paragraph, text)
             else:
-                p = document.add_paragraph()
-                _add_markdown_text_to_paragraph(p, line)
+                paragraph = document.add_paragraph()
+                _add_markdown_text_to_paragraph(paragraph, line)
 
             i += 1
 
-        # 插入图片占位符。
         if placeholder_idx >= len(placeholders):
             continue
 
@@ -320,19 +715,25 @@ def build_word_document(
         has_image = bool(image_path and Path(image_path).exists())
 
         if has_image and image_path:
-            # 页面可用宽度 = 21cm - 3cm左 - 2.5cm右 = 15.5cm
-            document.add_picture(image_path, width=Cm(15.5))
-            document.paragraphs[-1].alignment = WD_ALIGN_PARAGRAPH.CENTER
+            _insert_picture_with_constraints(document, image_path)
 
         caption = placeholder.get("caption", f"图{placeholder_idx + 1}")
         if not has_image:
             caption += "（图片生成失败）"
-        caption_paragraph = document.add_paragraph(caption)
+        caption_paragraph = document.add_paragraph()
         caption_paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        if caption_paragraph.runs:
-            caption_paragraph.runs[0].font.size = Pt(10)
+        caption_paragraph.paragraph_format.first_line_indent = Pt(0)
+        caption_run = caption_paragraph.add_run(caption)
+        _set_run_font(caption_run, size_pt=10)
 
         placeholder_idx += 1
 
+    document.add_page_break()
+    _add_acknowledgment_page(document, acknowledgment)
+
+    document.add_page_break()
+    _add_references_page(document, references)
+
     document.save(output_path)
+    # 取消调用无效的 LibreOffice headless 转换，以防打乱样式或丢弃 hint
     return output_path

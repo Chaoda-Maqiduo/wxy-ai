@@ -1,5 +1,7 @@
 from app.schemas.thesis import (
     AiImageFigure,
+    ChartFigure,
+    ChartSeries,
     FallbackFigure,
     FIGURE_BLOCK_PATTERN,
     MermaidFigure,
@@ -10,6 +12,8 @@ from app.schemas.thesis import (
 
 __all__ = [
     "AiImageFigure",
+    "ChartFigure",
+    "ChartSeries",
     "FallbackFigure",
     "FIGURE_BLOCK_PATTERN",
     "MermaidFigure",

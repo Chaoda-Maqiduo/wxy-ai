@@ -3,7 +3,7 @@ import logging
 import re
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, model_validator
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +29,16 @@ class GenerateRequest(BaseModel):
 
     title: str = Field(..., min_length=2, max_length=200, description="论文标题")
     outline: str = Field(..., min_length=50, description="用户确认/修改后的论文大纲")
+    author: str = Field(default="作者姓名", description="作者姓名")
+    advisor: str = Field(default="指导教师（姓名、职称、单位）", description="指导教师")
+    degree_type: str = Field(default="学士", description="学位类别")
+    major: str = Field(default="专业名称", description="专业")
+    school: str = Field(default="XX大学XX学院", description="学院（系）")
+    year_month: str = Field(default="", description="留空则自动填当前年月")
+    target_word_count: Literal[8000, 10000, 12000, 15000, 20000] = Field(
+        default=8000,
+        description="目标正文字数",
+    )
 
 
 class GenerateSubmitResponse(BaseModel):
@@ -46,10 +56,12 @@ class TaskStatusResponse(BaseModel):
     message: str = ""
     figure_count: int = Field(default=0, ge=0)
     mermaid_count: int = Field(default=0, ge=0)
+    chart_count: int = Field(default=0, ge=0)
     ai_image_count: int = Field(default=0, ge=0)
     fallback_count: int = Field(default=0, ge=0)
     fulltext_char_count: int = Field(default=0, ge=0)
     truncation_warning: bool = False
+    docx_path: str = Field(default="")
 
 
 class MermaidFigure(BaseModel):
@@ -70,6 +82,38 @@ class AiImageFigure(BaseModel):
     aspect_ratio: str = "16:9"
 
 
+class ChartSeries(BaseModel):
+    """标准图表数据序列。"""
+
+    name: str = Field(..., min_length=1)
+    data: list[float] = Field(..., min_length=1)
+
+
+class ChartFigure(BaseModel):
+    """标准图表占位符。"""
+
+    caption: str = Field(..., min_length=1)
+    render_method: Literal["chart"]
+    chart_type: Literal["line", "bar", "pie"]
+    title: str = Field(..., min_length=1)
+    x_label: str = ""
+    y_label: str = ""
+    categories: list[str] = Field(..., min_length=1)
+    series: list[ChartSeries] = Field(..., min_length=1)
+
+    @model_validator(mode="after")
+    def validate_chart_shape(self) -> "ChartFigure":
+        category_count = len(self.categories)
+        if self.chart_type in {"line", "bar"}:
+            for item in self.series:
+                if len(item.data) != category_count:
+                    raise ValueError("line/bar 图的 series.data 长度必须与 categories 一致")
+        elif self.chart_type == "pie":
+            if len(self.series[0].data) != category_count:
+                raise ValueError("pie 图的第一组 series.data 长度必须与 categories 一致")
+        return self
+
+
 class FallbackFigure(BaseModel):
     """解析或校验失败时的降级占位符。"""
 
@@ -85,6 +129,8 @@ def validate_figure_payload(raw: dict[str, Any], index: int) -> dict[str, Any]:
     try:
         if method == "mermaid":
             validated = MermaidFigure(**raw)
+        elif method == "chart":
+            validated = ChartFigure(**raw)
         elif method == "ai_image":
             validated = AiImageFigure(**raw)
         else:
@@ -122,19 +168,27 @@ def extract_figure_placeholders(text: str) -> list[dict[str, Any]]:
 
 def split_by_render_method(
     placeholders: list[dict[str, Any]],
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
-    """按渲染方式分组，返回 (mermaid, ai_image, fallback)。"""
+) -> tuple[
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+]:
+    """按渲染方式分组，返回 (mermaid, chart, ai_image, fallback)。"""
 
     mermaid = [item for item in placeholders if item.get("render_method") == "mermaid"]
+    chart = [item for item in placeholders if item.get("render_method") == "chart"]
     ai_image = [item for item in placeholders if item.get("render_method") == "ai_image"]
     fallback = [
         item for item in placeholders if item.get("render_method") == "fallback"
     ]
-    return mermaid, ai_image, fallback
+    return mermaid, chart, ai_image, fallback
 
 
 __all__ = [
     "AiImageFigure",
+    "ChartFigure",
+    "ChartSeries",
     "FallbackFigure",
     "FIGURE_BLOCK_PATTERN",
     "GenerateRequest",
