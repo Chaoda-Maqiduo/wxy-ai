@@ -27,6 +27,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     APP_HOST=0.0.0.0 \
     APP_PORT=10461 \
     APP_DEBUG=false \
+    HOME=/home/app \
+    XDG_CONFIG_HOME=/home/app/.config \
+    XDG_CACHE_HOME=/home/app/.cache \
+    MPLCONFIGDIR=/home/app/.config/matplotlib \
+    PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium \
     PATH="/app/.venv/bin:$PATH"
 
 WORKDIR /app
@@ -34,10 +39,17 @@ WORKDIR /app
 # Run as non-root user in container.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     nodejs npm \
-    libreoffice-writer \
+    chromium \
+    fonts-noto-cjk \
+    fonts-wqy-zenhei \
     && npm install -g @mermaid-js/mermaid-cli \
+    && fc-cache -f \
     && apt-get clean && rm -rf /var/lib/apt/lists/* \
-    && addgroup --system app && adduser --system --ingroup app app
+    && addgroup --system app \
+    && adduser --system --home /home/app --ingroup app app \
+    && mkdir -p /home/app/.config/matplotlib \
+    && mkdir -p /home/app/.cache/dconf \
+    && chown -R app:app /home/app
 
 # Copy prebuilt virtualenv and app source.
 COPY --from=builder --chown=app:app /app/.venv /app/.venv

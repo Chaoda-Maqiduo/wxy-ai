@@ -104,6 +104,7 @@ async def _filter_results(
     title: str,
     results: list[dict],
     label: str,
+    fallback_num: int = 5,
 ) -> list[dict]:
     """基于标题和 summary 进行相关性筛选，失败则取前 N 条。"""
     if not results:
@@ -127,7 +128,7 @@ async def _filter_results(
         return [results[i] for i in keep_indices if isinstance(i, int) and i < len(results)]
     except Exception as exc:  # noqa: BLE001
         logger.warning("%s 文献筛选失败，回退前几条: %s", label, exc)
-        return results[:5]
+        return results[:fallback_num]
 
 
 async def generate_references(title: str, outline: str) -> str:
@@ -152,7 +153,7 @@ async def generate_references(title: str, outline: str) -> str:
         en_queries = keyword_data.get("en") or [title]
         if not isinstance(en_queries, list):
             en_queries = [title]
-        en_queries = [str(query).strip() for query in en_queries[:2] if str(query).strip()]
+        en_queries = [str(query).strip() for query in en_queries[:1] if str(query).strip()]
         if not en_queries:
             en_queries = [title]
     except Exception as exc:  # noqa: BLE001
@@ -160,8 +161,8 @@ async def generate_references(title: str, outline: str) -> str:
         zh_query = title
         en_queries = [title]
 
-    search_tasks = [_search_scholar(zh_query, num=8)] + [
-        _search_scholar(query, num=6) for query in en_queries
+    search_tasks = [_search_scholar(zh_query, num=15)] + [
+        _search_scholar(query, num=12) for query in en_queries
     ]
     grouped_results = await asyncio.gather(*search_tasks)
 
@@ -190,18 +191,18 @@ async def generate_references(title: str, outline: str) -> str:
         return ""
 
     zh_filtered, en_filtered = await asyncio.gather(
-        _filter_results(llm, title, zh_results, "中文"),
-        _filter_results(llm, title, en_results, "英文"),
+        _filter_results(llm, title, zh_results, "中文", fallback_num=11),
+        _filter_results(llm, title, en_results, "英文", fallback_num=6),
     )
 
     lines: list[str] = []
     idx = 1
-    for item in zh_filtered[:5]:
+    for item in zh_filtered[:11]:
         line = _format_one_reference(item, idx, is_zh=True)
         if line:
             lines.append(line)
             idx += 1
-    for item in en_filtered[:10]:
+    for item in en_filtered[:6]:
         line = _format_one_reference(item, idx, is_zh=False)
         if line:
             lines.append(line)

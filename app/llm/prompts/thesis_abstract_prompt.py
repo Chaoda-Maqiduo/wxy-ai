@@ -1,37 +1,22 @@
 from langchain_core.prompts import ChatPromptTemplate
 
-ABSTRACT_ZH_PROMPT = ChatPromptTemplate.from_messages(
+ABSTRACT_COMBINED_PROMPT = ChatPromptTemplate.from_messages(
     [
         (
             "system",
             (
-                "你是一位专业的学术论文助手。根据提供的论文内容片段，撰写规范的中文摘要。\n\n"
+                "你是一位专业的学术论文助手。根据提供的论文内容片段，同时撰写中文摘要和对应的英文摘要。\n\n"
                 "要求：\n"
-                "1. 字数 300-500 字\n"
-                "2. 涵盖：研究背景、研究目的、研究方法、主要结论\n"
+                "1. 先写中文摘要（300-500 字），涵盖：研究背景、研究目的、研究方法、主要结论\n"
+                "2. 再写英文摘要（200-300 words），必须是中文摘要的忠实翻译，不可重新解读原文\n"
                 "3. 使用第三人称，不出现「本人」「我」\n"
-                "4. 只输出摘要正文，不加「摘要」标题\n\n"
-                "输出摘要正文后，另起一行输出关键词，格式严格为：\n"
-                "关键词：词1；词2；词3；词4；词5"
-            ),
-        ),
-        ("human", "{text_sample}"),
-    ]
-)
-
-ABSTRACT_EN_PROMPT = ChatPromptTemplate.from_messages(
-    [
-        (
-            "system",
-            (
-                "You are a professional academic writing assistant. "
-                "Based on the provided thesis excerpts, write an English Abstract.\n\n"
-                "Requirements:\n"
-                "1. 200-300 words\n"
-                "2. Cover: background, objective, methods, main conclusions\n"
-                "3. Third person, past tense for methods\n"
-                "4. Output abstract body only, no 'Abstract' heading\n\n"
-                "After the abstract body, on a new line, output keywords in this exact format:\n"
+                "4. 不加「摘要」「Abstract」等标题\n\n"
+                "输出格式（严格遵守，不可省略分隔符）：\n"
+                "===中文摘要===\n"
+                "（中文摘要正文）\n"
+                "关键词：词1；词2；词3；词4；词5\n\n"
+                "===英文摘要===\n"
+                "（英文摘要正文，为上方中文摘要的忠实翻译）\n"
                 "Keywords: word1; word2; word3; word4; word5"
             ),
         ),

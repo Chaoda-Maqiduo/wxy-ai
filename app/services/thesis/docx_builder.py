@@ -1,21 +1,23 @@
 import datetime
 import logging
-import os
 import re
-import shutil
-import subprocess
-import tempfile
 from pathlib import Path
 
 from docx import Document
 from docx.enum.section import WD_SECTION
-from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.enum.text import (
+    WD_ALIGN_PARAGRAPH,
+    WD_LINE_SPACING,
+    WD_TAB_ALIGNMENT,
+    WD_TAB_LEADER,
+)
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Cm, Pt, RGBColor
 from PIL import Image
 
 FIGURE_BLOCK_PATTERN = r"<<FIGURE>>\s*.*?\s*<</FIGURE>>"
+CITATION_PATTERN = re.compile(r"\[(\d{1,3})\]")
 
 
 def _set_run_font(
@@ -65,50 +67,133 @@ def _restart_page_numbering(section, start: int = 1) -> None:
     sect_pr.append(pg_num)
 
 
-def _refresh_toc_with_libreoffice(docx_path: str) -> None:
-    """
-    调用 LibreOffice headless 对 docx 进行一次转换，触发 TOC 域重算。
-    失败仅记日志，不影响文档主流程。
-    """
-    logger = logging.getLogger(__name__)
-    soffice = shutil.which("soffice") or shutil.which("libreoffice")
-    if not soffice:
-        logger.warning("LibreOffice 未找到，TOC 需手动更新")
-        return
+# ---------- TOC: heading pre-scan / bookmark / PAGEREF ----------
 
-    output_dir = str(Path(docx_path).parent)
-    try:
-        profile_root = tempfile.mkdtemp(prefix="libreoffice-profile-", dir=output_dir)
-        env = os.environ.copy()
-        env["HOME"] = profile_root
-        env["XDG_CACHE_HOME"] = profile_root
-        env["XDG_CONFIG_HOME"] = profile_root
-        result = subprocess.run(
-            [
-                soffice,
-                "--headless",
-                "--convert-to",
-                "docx",
-                "--outdir",
-                output_dir,
-                docx_path,
-            ],
-            capture_output=True,
-            text=True,
-            timeout=60,
-            env=env,
+
+def _pre_scan_headings(
+    full_text: str,
+    title: str = "",
+) -> list[dict[str, object]]:
+    """Pre-scan body Markdown to extract level 1-3 headings for the TOC page.
+
+    Returns a list like::
+
+        [
+            {"text": "First Chapter", "level": 1, "bookmark": "_toc_0", "bookmark_id": 100},
+            {"text": "1.1 Background", "level": 2, "bookmark": "_toc_1", "bookmark_id": 101},
+        ]
+    """
+    clean_text = re.sub(FIGURE_BLOCK_PATTERN, "", full_text, flags=re.DOTALL)
+    entries: list[dict[str, object]] = []
+
+    # Non-body headings that should never appear in the TOC,
+    # even if the LLM accidentally generates them inside the body text.
+    _NON_BODY_HEADINGS = {
+        "摘要", "摘 要", "中文摘要",
+        "abstract",
+        "致谢", "致 谢",
+        "参考文献",
+    }
+
+    for line in clean_text.split("\n"):
+        line = line.strip()
+        if not line or line == "---pagebreak---":
+            continue
+
+        level = 0
+        text = ""
+        if line.startswith("### "):
+            level, text = 3, line[4:]
+        elif line.startswith("## "):
+            level, text = 2, line[3:]
+        elif line.startswith("# "):
+            level, text = 1, line[2:]
+
+        if level == 0:
+            continue
+
+        text = text.strip()
+        # Exclude the thesis title itself
+        if title and text == title.strip():
+            continue
+        # Exclude non-body section headings (defensive against prompt drift)
+        if text.lower() in _NON_BODY_HEADINGS:
+            continue
+
+        idx = len(entries)
+        entries.append(
+            {
+                "text": text,
+                "level": level,
+                "bookmark": f"_toc_{idx}",
+                "bookmark_id": idx + 100,
+            }
         )
-        if result.returncode != 0:
-            logger.warning("LibreOffice TOC 刷新失败: %s", result.stderr.strip())
-        else:
-            logger.info("LibreOffice TOC 刷新成功: %s", docx_path)
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("LibreOffice 调用异常: %s", exc)
+
+    return entries
 
 
-def _has_libreoffice() -> bool:
-    """判断当前环境是否可用 LibreOffice。"""
-    return bool(shutil.which("soffice") or shutil.which("libreoffice"))
+def _add_bookmark(paragraph, bookmark_name: str, bookmark_id: int) -> None:
+    """Wrap paragraph content with bookmarkStart / bookmarkEnd."""
+    p_element = paragraph._element
+
+    bm_start = OxmlElement("w:bookmarkStart")
+    bm_start.set(qn("w:id"), str(bookmark_id))
+    bm_start.set(qn("w:name"), bookmark_name)
+
+    bm_end = OxmlElement("w:bookmarkEnd")
+    bm_end.set(qn("w:id"), str(bookmark_id))
+
+    p_pr = p_element.find(qn("w:pPr"))
+    if p_pr is not None:
+        p_pr.addnext(bm_start)
+    else:
+        p_element.insert(0, bm_start)
+
+    p_element.append(bm_end)
+
+
+def _add_pageref_field(paragraph, bookmark_name: str, cached_page: str = "?") -> None:
+    """Append a PAGEREF field referencing *bookmark_name* to *paragraph*.
+
+    *cached_page* is the pre-estimated page number displayed until the
+    end-user's application recalculates fields.  ``dirty="true"`` on the
+    begin fldChar signals Word / WPS that this field should be refreshed.
+
+    The generated OOXML structure::
+
+        <w:fldChar begin dirty="true"/>
+        <w:instrText> PAGEREF _toc_0 \\h </w:instrText>
+        <w:fldChar separate/>
+        <w:t>5</w:t>          (estimated; corrected on F9 / auto-update)
+        <w:fldChar end/>
+    """
+    run_begin = paragraph.add_run()
+    fld_begin = OxmlElement("w:fldChar")
+    fld_begin.set(qn("w:fldCharType"), "begin")
+    fld_begin.set(qn("w:dirty"), "true")
+    run_begin._element.append(fld_begin)
+
+    run_instr = paragraph.add_run()
+    instr = OxmlElement("w:instrText")
+    instr.set(qn("xml:space"), "preserve")
+    instr.text = f" PAGEREF {bookmark_name} \\h "
+    run_instr._element.append(instr)
+
+    run_sep = paragraph.add_run()
+    fld_sep = OxmlElement("w:fldChar")
+    fld_sep.set(qn("w:fldCharType"), "separate")
+    run_sep._element.append(fld_sep)
+
+    run_placeholder = paragraph.add_run(str(cached_page))
+    _set_run_font(run_placeholder, size_pt=12)
+
+    run_end = paragraph.add_run()
+    fld_end = OxmlElement("w:fldChar")
+    fld_end.set(qn("w:fldCharType"), "end")
+    run_end._element.append(fld_end)
+
+
 
 
 def _clear_header_footer(section) -> None:
@@ -223,13 +308,16 @@ def _add_markdown_text_to_paragraph(
 ) -> None:
     """解析 Markdown 内联加粗并写入段落。"""
     text = text.replace("~", "")
-    parts = re.split(r"(\*\*.*?\*\*)", text)
+    parts = re.split(r"(\*\*.*?\*\*|\[\d{1,3}\])", text)
     for part in parts:
         if not part:
             continue
         if part.startswith("**") and part.endswith("**") and len(part) >= 4:
             run = paragraph.add_run(part[2:-2])
             run.bold = True
+        elif CITATION_PATTERN.fullmatch(part):
+            run = paragraph.add_run(part)
+            run.font.superscript = True
         else:
             run = paragraph.add_run(part)
             if is_header:
@@ -343,6 +431,9 @@ def _add_cover_page(
     p_main = document.add_paragraph()
     p_main.alignment = WD_ALIGN_PARAGRAPH.CENTER
     p_main.paragraph_format.first_line_indent = Pt(0)
+    # Cover title uses a much larger font than body text; if it inherits the
+    # Normal style's fixed 22pt line height, WPS clips the glyphs vertically.
+    p_main.paragraph_format.line_spacing_rule = WD_LINE_SPACING.SINGLE
     run_main = p_main.add_run("学士学位论文")
     _set_run_font(run_main, zh_font="黑体", size_pt=36, bold=True)
     p_main.paragraph_format.space_after = Pt(24)
@@ -350,6 +441,7 @@ def _add_cover_page(
     p_title = document.add_paragraph()
     p_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
     p_title.paragraph_format.first_line_indent = Pt(0)
+    p_title.paragraph_format.line_spacing_rule = WD_LINE_SPACING.SINGLE
     run_title = p_title.add_run(title)
     _set_run_font(run_title, size_pt=18, underline=True)
     p_title.paragraph_format.space_after = Pt(36)
@@ -470,45 +562,135 @@ def _add_abstract_en_page(document: Document, abstract: str, keywords: str) -> N
         )
 
 
-def _add_toc_page(document: Document, show_manual_hint: bool = True) -> None:
-    """插入目录页。"""
+def _estimate_page_numbers(
+    full_text: str,
+    toc_entries: list[dict[str, object]],
+    body_start_page: int = 1,
+) -> dict[str, int]:
+    """Estimate the page number for each TOC heading.
+
+    Uses a simple character-count heuristic:
+      - A4 with 3cm/2.5cm margins, 12pt Song, 22pt exact line spacing
+      - ~32 lines × ~35 chars ≈ **1100 chars per page**
+      - Explicit ``---pagebreak---`` forces a new page
+      - Each level-1 heading (``# ``) is preceded by a page break in the
+        document (except the first), so it always starts a new page.
+
+    Returns ``{bookmark_name: estimated_page, ...}``.
+    """
+    CHARS_PER_PAGE = 1100
+    clean = re.sub(FIGURE_BLOCK_PATTERN, "", full_text, flags=re.DOTALL)
+
+    page = body_start_page
+    char_count = 0
+    page_map: dict[str, int] = {}
+
+    # Build a quick lookup: heading_text -> bookmark (first match wins)
+    heading_queue: list[dict[str, object]] = list(toc_entries)
+    hq_idx = 0
+
+    for line in clean.split("\n"):
+        stripped = line.strip()
+
+        # Explicit page break
+        if stripped == "---pagebreak---":
+            page += 1
+            char_count = 0
+            continue
+
+        # Detect heading level
+        level = 0
+        text = ""
+        if stripped.startswith("### "):
+            level, text = 3, stripped[4:].strip()
+        elif stripped.startswith("## "):
+            level, text = 2, stripped[3:].strip()
+        elif stripped.startswith("# "):
+            level, text = 1, stripped[2:].strip()
+
+        # Match heading to next expected TOC entry
+        if level > 0 and hq_idx < len(heading_queue):
+            entry = heading_queue[hq_idx]
+            if entry["text"] == text and entry["level"] == level:
+                page_map[str(entry["bookmark"])] = page
+                hq_idx += 1
+
+        # Accumulate characters for page estimation
+        char_count += len(stripped) + 1  # +1 for newline equivalent
+        if char_count >= CHARS_PER_PAGE:
+            page += 1
+            char_count = 0
+
+    return page_map
+
+
+def _add_toc_page(
+    document: Document,
+    toc_entries: list[dict[str, object]],
+    full_text: str = "",
+) -> None:
+    """Generate a visible TOC page with PAGEREF dynamic page numbers.
+
+    Each entry is a normal paragraph structured as::
+
+        Heading text .................. page_number
+
+    Page numbers use PAGEREF fields referencing bookmarks on body headings,
+    so WPS/Word calculates the correct page on open.  Pre-estimated page
+    numbers are written as cached values so the TOC is immediately readable
+    even when the application does not auto-update fields.
+    """
+    # Estimate how many TOC pages we'll need (affects body start page)
+    toc_page_count = max(1, (len(toc_entries) + 16) // 17)  # ~17 entries/page
+    # Front matter: cover(1) + abstract_zh(1) + abstract_en(1) + TOC pages
+    body_start_page = 1  # body section restarts page numbering from 1
+    page_map = _estimate_page_numbers(full_text, toc_entries, body_start_page)
+
+    # ---- TOC title ----
     p_title = document.add_paragraph()
     p_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
     p_title.paragraph_format.first_line_indent = Pt(0)
+    p_title.paragraph_format.space_after = Pt(12)
     run_title = p_title.add_run("目  录")
     _set_run_font(run_title, zh_font="黑体", size_pt=16, bold=True)
 
-    paragraph = document.add_paragraph()
-    paragraph.paragraph_format.first_line_indent = Pt(0)
-    run = paragraph.add_run()
-    r_element = run._element
+    # Per-level left indentation
+    indent_map = {1: Cm(0), 2: Cm(0.74), 3: Cm(1.48)}
 
-    fld_begin = OxmlElement("w:fldChar")
-    fld_begin.set(qn("w:fldCharType"), "begin")
-    fld_begin.set(qn("w:dirty"), "true")
-    r_element.append(fld_begin)
+    for entry in toc_entries:
+        p = document.add_paragraph()
+        p.paragraph_format.first_line_indent = Pt(0)
+        p.paragraph_format.left_indent = indent_map.get(int(entry["level"]), Cm(0))
+        p.paragraph_format.space_before = Pt(2)
+        p.paragraph_format.space_after = Pt(2)
+        _apply_fixed_line_spacing(p.paragraph_format, pt=22)
 
-    instr = OxmlElement("w:instrText")
-    instr.set(qn("xml:space"), "preserve")
-    instr.text = ' TOC \\o "1-3" \\h \\z \\u '
-    r_element.append(instr)
+        # Right-aligned tab stop with dot leader at right margin (15.5 cm)
+        p.paragraph_format.tab_stops.add_tab_stop(
+            Cm(15.5), WD_TAB_ALIGNMENT.RIGHT, WD_TAB_LEADER.DOTS
+        )
 
-    fld_sep = OxmlElement("w:fldChar")
-    fld_sep.set(qn("w:fldCharType"), "separate")
-    r_element.append(fld_sep)
+        # Heading text
+        run_text = p.add_run(str(entry["text"]))
+        _set_run_font(run_text, size_pt=12)
+        if entry["level"] == 1:
+            run_text.bold = True
 
-    hint_text = " （目录生成完毕。为确版面准确，只需在 Word 中全选(Ctrl+A)后按 F9 更新，或右键此处选择“更新域”即可） "
-    hint = paragraph.add_run(hint_text)
-    _set_run_font(hint, size_pt=10, color_rgb=RGBColor(128, 128, 128))
+        # Tab character (triggers dot leader extending to page number)
+        tab_run = p.add_run("\t")
+        _set_run_font(tab_run, size_pt=12)
 
-    fld_end = OxmlElement("w:fldChar")
-    fld_end.set(qn("w:fldCharType"), "end")
-    paragraph.add_run()._element.append(fld_end)
+        # PAGEREF field with estimated page number as cached value
+        bm = str(entry["bookmark"])
+        estimated = str(page_map.get(bm, "1"))
+        _add_pageref_field(p, bm, cached_page=estimated)
 
-    settings = document.settings.element
+    # Document setting: auto-update all fields on open (including PAGEREF)
+    doc_settings = document.settings.element
     update_fields = OxmlElement("w:updateFields")
     update_fields.set(qn("w:val"), "true")
-    settings.append(update_fields)
+    doc_settings.append(update_fields)
+
 
 
 def _add_acknowledgment_page(document: Document, acknowledgment: str) -> None:
@@ -638,9 +820,12 @@ def build_word_document(
     _add_abstract_zh_page(document, abstract_zh, keywords_zh)
     _add_abstract_en_page(document, abstract_en, keywords_en)
 
-    # Section 2：目录
+    # 预扫描正文标题，生成目录条目列表
+    toc_entries = _pre_scan_headings(full_text, title=title)
+
+    # Section 2：目录（可见条目 + PAGEREF 动态页码）
     _make_blank_section(document)
-    _add_toc_page(document)
+    _add_toc_page(document, toc_entries, full_text=full_text)
 
     # Section 3：正文 + 致谢 + 参考文献
     _make_blank_section(document)
@@ -648,6 +833,10 @@ def build_word_document(
 
     segments = re.split(FIGURE_BLOCK_PATTERN, full_text, flags=re.DOTALL)
     placeholder_idx = 0
+
+    # 目录条目迭代器，用于在正文标题上打 bookmark
+    _toc_iter = iter(toc_entries)
+    _next_toc = next(_toc_iter, None)
 
     for segment in segments:
         lines = [line.strip() for line in segment.strip().split("\n")]
@@ -682,14 +871,38 @@ def build_word_document(
                 continue
 
             if line.startswith("### "):
-                paragraph = document.add_heading(line[4:], level=3)
+                heading_text = line[4:]
+                paragraph = document.add_heading(heading_text, level=3)
                 paragraph.paragraph_format.first_line_indent = Pt(0)
+                if (
+                    _next_toc
+                    and _next_toc["text"] == heading_text.strip()
+                    and _next_toc["level"] == 3
+                ):
+                    _add_bookmark(paragraph, str(_next_toc["bookmark"]), int(_next_toc["bookmark_id"]))
+                    _next_toc = next(_toc_iter, None)
             elif line.startswith("## "):
-                paragraph = document.add_heading(line[3:], level=2)
+                heading_text = line[3:]
+                paragraph = document.add_heading(heading_text, level=2)
                 paragraph.paragraph_format.first_line_indent = Pt(0)
+                if (
+                    _next_toc
+                    and _next_toc["text"] == heading_text.strip()
+                    and _next_toc["level"] == 2
+                ):
+                    _add_bookmark(paragraph, str(_next_toc["bookmark"]), int(_next_toc["bookmark_id"]))
+                    _next_toc = next(_toc_iter, None)
             elif line.startswith("# "):
-                paragraph = document.add_heading(line[2:], level=1)
+                heading_text = line[2:]
+                paragraph = document.add_heading(heading_text, level=1)
                 paragraph.paragraph_format.first_line_indent = Pt(0)
+                if (
+                    _next_toc
+                    and _next_toc["text"] == heading_text.strip()
+                    and _next_toc["level"] == 1
+                ):
+                    _add_bookmark(paragraph, str(_next_toc["bookmark"]), int(_next_toc["bookmark_id"]))
+                    _next_toc = next(_toc_iter, None)
             elif line.startswith("```"):
                 pass
             elif line.startswith("- "):
@@ -735,5 +948,4 @@ def build_word_document(
     _add_references_page(document, references)
 
     document.save(output_path)
-    # 取消调用无效的 LibreOffice headless 转换，以防打乱样式或丢弃 hint
     return output_path

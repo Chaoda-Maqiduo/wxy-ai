@@ -67,7 +67,13 @@ async def generate_thesis_document(
     output_dir = f"app/output/{task_id}"
     safe_title = sanitize_filename(title)
 
-    full_text = await generate_fulltext(outline, target_word_count=target_word_count)
+    references = await _best_effort(generate_references(title, outline), "", "参考文献生成")
+
+    full_text = await generate_fulltext(
+        outline,
+        target_word_count=target_word_count,
+        references=references,
+    )
 
     char_count = len(full_text)
     truncation_warning = False
@@ -81,10 +87,9 @@ async def generate_thesis_document(
         "abstract_en": "",
         "keywords_en": "",
     }
-    abstract_data, acknowledgment, references = await asyncio.gather(
+    abstract_data, acknowledgment = await asyncio.gather(
         _best_effort(generate_abstracts(full_text), default_abstract, "摘要生成"),
         _best_effort(generate_acknowledgment(title, advisor), "", "致谢生成"),
-        _best_effort(generate_references(title, outline), "", "参考文献生成"),
     )
 
     placeholders = extract_figure_placeholders(full_text)

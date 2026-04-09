@@ -1,7 +1,10 @@
 import asyncio
+import json
 import logging
+import os
 import tempfile
 from abc import ABC, abstractmethod
+from functools import lru_cache
 from pathlib import Path
 
 from PIL import Image, ImageDraw
@@ -12,15 +15,72 @@ logger = logging.getLogger(__name__)
 def _pick_chart_font_family() -> list[str]:
     """返回适合图表中文显示的字体候选列表。"""
     return [
+        "Noto Sans CJK SC",
+        "WenQuanYi Zen Hei",
         "PingFang SC",
         "Hiragino Sans GB",
         "Microsoft YaHei",
         "SimHei",
-        "Noto Sans CJK SC",
-        "WenQuanYi Zen Hei",
         "Arial Unicode MS",
         "DejaVu Sans",
     ]
+
+
+def _available_chart_fonts() -> list[tuple[str, str]]:
+    """返回 matplotlib 当前可见的字体 (family_name, font_path)。"""
+    import matplotlib
+
+    matplotlib.use("Agg")
+    from matplotlib import font_manager
+
+    return [
+        (str(item.name or "").strip(), str(getattr(item, "fname", "") or "").strip())
+        for item in font_manager.fontManager.ttflist
+    ]
+
+
+@lru_cache
+def _resolve_chart_font() -> tuple[str, str | None]:
+    """解析并锁定一个真实存在的图表字体，优先中文字体。"""
+    aliases: dict[str, tuple[str, ...]] = {
+        "Noto Sans CJK SC": (
+            "noto sans cjk sc",
+            "notosanscjk",
+            "noto sans cjk",
+            "source han sans sc",
+            "sourcehansanssc",
+        ),
+        "WenQuanYi Zen Hei": (
+            "wenquanyi zen hei",
+            "wqy-zenhei",
+            "wqy zen hei",
+        ),
+        "PingFang SC": ("pingfang sc",),
+        "Hiragino Sans GB": ("hiragino sans gb",),
+        "Microsoft YaHei": ("microsoft yahei", "msyh"),
+        "SimHei": ("simhei",),
+        "Arial Unicode MS": ("arial unicode ms",),
+        "DejaVu Sans": ("dejavu sans",),
+    }
+
+    available_fonts = _available_chart_fonts()
+    normalized_entries = [
+        (name, path, name.lower(), path.lower().replace(" ", ""))
+        for name, path in available_fonts
+    ]
+
+    for candidate in _pick_chart_font_family():
+        candidate_aliases = aliases.get(candidate, (candidate.lower(),))
+        for name, path, lowered_name, lowered_path in normalized_entries:
+            if lowered_name == candidate.lower():
+                logger.info("图表字体已锁定: %s (%s)", name, path)
+                return name, path or None
+            if any(alias in lowered_name or alias.replace(" ", "") in lowered_path for alias in candidate_aliases):
+                logger.info("图表字体已锁定: %s (%s)", name, path)
+                return name, path or None
+
+    logger.warning("未找到可用中文图表字体，回退到 DejaVu Sans")
+    return "DejaVu Sans", None
 
 
 def _auto_crop_whitespace(image_path: str, padding: int = 20) -> str:
@@ -103,6 +163,18 @@ async def render_mermaid(mermaid_code: str, output_path: str) -> str:
         temp_file.write(mermaid_code)
         mmd_path = temp_file.name
 
+    puppeteer_config = {
+        "args": ["--no-sandbox", "--disable-setuid-sandbox"],
+    }
+    if executable_path := os.getenv("PUPPETEER_EXECUTABLE_PATH"):
+        puppeteer_config["executablePath"] = executable_path
+
+    with tempfile.NamedTemporaryFile(
+        mode="w", encoding="utf-8", suffix=".json", delete=False
+    ) as temp_config:
+        json.dump(puppeteer_config, temp_config, ensure_ascii=False)
+        pptr_config_path = temp_config.name
+
     try:
         proc = await asyncio.create_subprocess_exec(
             "mmdc",
@@ -110,6 +182,8 @@ async def render_mermaid(mermaid_code: str, output_path: str) -> str:
             mmd_path,
             "-o",
             output_path,
+            "-p",
+            pptr_config_path,
             "-b",
             "white",
             "-w",
@@ -122,6 +196,7 @@ async def render_mermaid(mermaid_code: str, output_path: str) -> str:
         _, stderr = await proc.communicate()
     finally:
         Path(mmd_path).unlink(missing_ok=True)
+        Path(pptr_config_path).unlink(missing_ok=True)
 
     if proc.returncode != 0:
         raise RuntimeError(
@@ -142,10 +217,17 @@ def _render_chart_sync(chart_spec: dict, output_path: str) -> str:
     import matplotlib
 
     matplotlib.use("Agg")
-    from matplotlib import pyplot as plt
+    from matplotlib import font_manager, pyplot as plt
 
-    plt.rcParams["font.family"] = "sans-serif"
-    plt.rcParams["font.sans-serif"] = _pick_chart_font_family()
+    font_name, font_path = _resolve_chart_font()
+    font_prop = (
+        font_manager.FontProperties(fname=font_path)
+        if font_path
+        else font_manager.FontProperties(family=font_name)
+    )
+
+    plt.rcParams["font.family"] = [font_name]
+    plt.rcParams["font.sans-serif"] = [font_name]
     plt.rcParams["axes.unicode_minus"] = False
 
     chart_type = chart_spec["chart_type"]
@@ -197,7 +279,7 @@ def _render_chart_sync(chart_spec: dict, output_path: str) -> str:
         ax.grid(False)
         pie_series = series[0]
         colors = [palette[index % len(palette)] for index in range(len(categories))]
-        ax.pie(
+        _, pie_texts, pie_autotexts = ax.pie(
             pie_series["data"],
             labels=categories,
             autopct="%1.1f%%",
@@ -207,16 +289,20 @@ def _render_chart_sync(chart_spec: dict, output_path: str) -> str:
             wedgeprops={"edgecolor": "white", "linewidth": 1},
             textprops={"fontsize": 10},
         )
+        for text in [*pie_texts, *pie_autotexts]:
+            text.set_fontproperties(font_prop)
         ax.axis("equal")
     else:
         raise ValueError(f"Unsupported chart_type: {chart_type}")
 
-    ax.set_title(title, fontsize=18, pad=18)
+    ax.set_title(title, fontsize=18, pad=18, fontproperties=font_prop)
     if chart_type != "pie":
-        ax.set_xlabel(x_label, fontsize=12)
-        ax.set_ylabel(y_label, fontsize=12)
+        ax.set_xlabel(x_label, fontsize=12, fontproperties=font_prop)
+        ax.set_ylabel(y_label, fontsize=12, fontproperties=font_prop)
+        for label in [*ax.get_xticklabels(), *ax.get_yticklabels()]:
+            label.set_fontproperties(font_prop)
         if any(item.get("name") for item in series):
-            ax.legend(frameon=False)
+            ax.legend(frameon=False, prop=font_prop)
 
     fig.tight_layout()
     fig.savefig(output_path, format="png", facecolor="white", bbox_inches="tight")
@@ -337,7 +423,7 @@ class TwelveAIGenerator(ImageGenerator):
                 "responseModalities": ["IMAGE"],
                 "imageConfig": {
                     "aspectRatio": real_aspect,
-                    "imageSize": "1K"
+                    "imageSize": "4K"
                 }
             }
         }
