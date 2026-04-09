@@ -156,7 +156,11 @@ def extract_figure_placeholders(text: str) -> list[dict[str, Any]]:
 
     for index, match in enumerate(matches):
         try:
-            raw = json.loads(match.strip())
+            # 防御性剥离：LLM 偶尔会在 JSON 外包裹 Markdown 代码围栏
+            clean_text = match.strip()
+            clean_text = re.sub(r"^```(?:json)?\s*", "", clean_text, flags=re.IGNORECASE)
+            clean_text = re.sub(r"\s*```$", "", clean_text).strip()
+            raw = json.loads(clean_text)
         except json.JSONDecodeError as exc:
             logger.warning("占位符 #%d JSON 解析失败: %s", index, exc)
             placeholders.append(

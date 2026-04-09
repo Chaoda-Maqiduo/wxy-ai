@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi import Path as FastApiPath
 from fastapi.responses import FileResponse
 
 from app.schemas.thesis import (
@@ -135,7 +136,9 @@ async def generate_document(
 
 
 @router.get("/status/{task_id}", response_model=TaskStatusResponse)
-async def get_task_status(task_id: str) -> TaskStatusResponse:
+async def get_task_status(
+    task_id: str = FastApiPath(..., pattern=r"^[a-zA-Z0-9_-]+$"),
+) -> TaskStatusResponse:
     """查询任务状态。"""
 
     data = _read_status(task_id)
@@ -145,7 +148,9 @@ async def get_task_status(task_id: str) -> TaskStatusResponse:
 
 
 @router.get("/download/{task_id}")
-async def download_document(task_id: str) -> FileResponse:
+async def download_document(
+    task_id: str = FastApiPath(..., pattern=r"^[a-zA-Z0-9_-]+$"),
+) -> FileResponse:
     """下载生成的 Word 文档。"""
 
     data = _read_status(task_id)

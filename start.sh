@@ -95,6 +95,7 @@ if [ -n "$NETWORK_NAME" ]; then
     --restart unless-stopped \
     --env-file "$ENV_FILE" \
     --network "$NETWORK_NAME" \
+    -v "${PROJECT_DIR}/app/output:/app/app/output" \
     -p "${HOST_PORT}:${CONTAINER_PORT}" \
     "$IMAGE_NAME")
 else
@@ -102,6 +103,7 @@ else
     --name "$CONTAINER_NAME" \
     --restart unless-stopped \
     --env-file "$ENV_FILE" \
+    -v "${PROJECT_DIR}/app/output:/app/app/output" \
     -p "${HOST_PORT}:${CONTAINER_PORT}" \
     "$IMAGE_NAME")
 fi
