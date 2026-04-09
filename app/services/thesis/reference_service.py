@@ -153,7 +153,7 @@ async def generate_references(title: str, outline: str) -> str:
         en_queries = keyword_data.get("en") or [title]
         if not isinstance(en_queries, list):
             en_queries = [title]
-        en_queries = [str(query).strip() for query in en_queries[:1] if str(query).strip()]
+        en_queries = [str(query).strip() for query in en_queries[:2] if str(query).strip()]
         if not en_queries:
             en_queries = [title]
     except Exception as exc:  # noqa: BLE001
@@ -161,8 +161,8 @@ async def generate_references(title: str, outline: str) -> str:
         zh_query = title
         en_queries = [title]
 
-    search_tasks = [_search_scholar(zh_query, num=15)] + [
-        _search_scholar(query, num=12) for query in en_queries
+    search_tasks = [_search_scholar(zh_query, num=20)] + [
+        _search_scholar(query, num=15) for query in en_queries
     ]
     grouped_results = await asyncio.gather(*search_tasks)
 
@@ -191,18 +191,24 @@ async def generate_references(title: str, outline: str) -> str:
         return ""
 
     zh_filtered, en_filtered = await asyncio.gather(
-        _filter_results(llm, title, zh_results, "中文", fallback_num=11),
-        _filter_results(llm, title, en_results, "英文", fallback_num=6),
+        _filter_results(llm, title, zh_results, "中文", fallback_num=15),
+        _filter_results(llm, title, en_results, "英文", fallback_num=10),
     )
+
+    # 目标：至少产出 15 条参考文献
+    # 中文优先，不足则用英文补齐
+    target_total = 15
+    zh_max = min(len(zh_filtered), 11)  # 中文最多 11 条
+    en_max = max(target_total - zh_max, 6)  # 剩余由英文补齐，至少 6 条
 
     lines: list[str] = []
     idx = 1
-    for item in zh_filtered[:11]:
+    for item in zh_filtered[:zh_max]:
         line = _format_one_reference(item, idx, is_zh=True)
         if line:
             lines.append(line)
             idx += 1
-    for item in en_filtered[:6]:
+    for item in en_filtered[:en_max]:
         line = _format_one_reference(item, idx, is_zh=False)
         if line:
             lines.append(line)
