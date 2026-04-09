@@ -567,59 +567,82 @@ def _estimate_page_numbers(
     toc_entries: list[dict[str, object]],
     body_start_page: int = 1,
 ) -> dict[str, int]:
-    """Estimate the page number for each TOC heading.
+    """Estimate the page number for each TOC heading accurately based on lines.
 
-    Uses a simple character-count heuristic:
-      - A4 with 3cm/2.5cm margins, 12pt Song, 22pt exact line spacing
-      - ~32 lines × ~35 chars ≈ **1100 chars per page**
-      - Explicit ``---pagebreak---`` forces a new page
-      - Each level-1 heading (``# ``) is preceded by a page break in the
-        document (except the first), so it always starts a new page.
+    Uses a line-count heuristic:
+      - A4 with 3cm/2.5cm margins, approx 31 lines per page
+      - Approx 36 characters per line
+      - Images take about 14 lines (half a page)
+      - Headings take extra lines for vertical spacing
 
     Returns ``{bookmark_name: estimated_page, ...}``.
     """
-    CHARS_PER_PAGE = 1100
-    clean = re.sub(FIGURE_BLOCK_PATTERN, "", full_text, flags=re.DOTALL)
-
+    LINES_PER_PAGE = 31
+    CHARS_PER_LINE = 36
+    LINES_PER_IMAGE = 14
+    
+    text_with_markers = re.sub(FIGURE_BLOCK_PATTERN, "\n---image---\n", full_text, flags=re.DOTALL)
+    
     page = body_start_page
-    char_count = 0
+    line_count = 0
     page_map: dict[str, int] = {}
-
-    # Build a quick lookup: heading_text -> bookmark (first match wins)
+    
     heading_queue: list[dict[str, object]] = list(toc_entries)
     hq_idx = 0
-
-    for line in clean.split("\n"):
+    
+    for line in text_with_markers.split("\n"):
         stripped = line.strip()
-
-        # Explicit page break
+        
         if stripped == "---pagebreak---":
-            page += 1
-            char_count = 0
+            if line_count > 0:
+                page += 1
+                line_count = 0
             continue
-
-        # Detect heading level
+            
+        if stripped == "---image---":
+            line_count += LINES_PER_IMAGE
+            if line_count >= LINES_PER_PAGE:
+                page += 1
+                line_count = line_count % LINES_PER_PAGE
+            continue
+            
+        if not stripped:
+            continue
+            
         level = 0
         text = ""
+        added_lines = 1
+
         if stripped.startswith("### "):
             level, text = 3, stripped[4:].strip()
+            added_lines = 2
         elif stripped.startswith("## "):
             level, text = 2, stripped[3:].strip()
+            added_lines = 2
         elif stripped.startswith("# "):
             level, text = 1, stripped[2:].strip()
+            added_lines = 3
+        elif stripped.startswith("|"): 
+            added_lines = 1
+        elif stripped.startswith("```"):
+            added_lines = 1
+        else:
+            added_lines = max(1, (len(stripped) + 2 + CHARS_PER_LINE - 1) // CHARS_PER_LINE)
 
-        # Match heading to next expected TOC entry
+        # Record page for heading
         if level > 0 and hq_idx < len(heading_queue):
             entry = heading_queue[hq_idx]
             if entry["text"] == text and entry["level"] == level:
+                if line_count + added_lines > LINES_PER_PAGE:
+                    page += 1
+                    line_count = 0
                 page_map[str(entry["bookmark"])] = page
                 hq_idx += 1
 
-        # Accumulate characters for page estimation
-        char_count += len(stripped) + 1  # +1 for newline equivalent
-        if char_count >= CHARS_PER_PAGE:
+        line_count += added_lines
+        if line_count >= LINES_PER_PAGE:
             page += 1
-            char_count = 0
+            line_count = line_count % LINES_PER_PAGE
 
     return page_map
 
