@@ -18,9 +18,12 @@ def _build_outline_chain():
     return THESIS_OUTLINE_PROMPT | llm | StrOutputParser()
 
 
-async def generate_outline(title: str) -> str:
+async def generate_outline(title: str, target_word_count: int = 8000) -> str:
     """阶段①：根据论文标题生成结构化大纲。"""
 
     chain = _build_outline_chain()
-    result = await chain.ainvoke({"title": title})
+    result = await chain.ainvoke({
+        "title": title,
+        "target_word_count": target_word_count
+    })
     return result.strip()

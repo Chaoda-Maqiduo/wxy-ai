@@ -104,7 +104,7 @@ async def create_outline(req: OutlineRequest) -> OutlineResponse:
 
     try:
         generate_outline = _load_generate_outline()
-        outline = await generate_outline(req.title)
+        outline = await generate_outline(req.title, getattr(req, "target_word_count", 8000))
     except Exception as exc:  # noqa: BLE001
         logger.exception("大纲生成失败")
         raise HTTPException(status_code=500, detail=f"大纲生成失败: {exc}") from exc

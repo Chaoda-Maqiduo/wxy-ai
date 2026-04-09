@@ -15,6 +15,10 @@ class OutlineRequest(BaseModel):
     """生成论文大纲请求。"""
 
     title: str = Field(..., min_length=2, max_length=200, description="论文标题")
+    target_word_count: Literal[8000, 10000, 12000, 15000, 20000] = Field(
+        default=8000,
+        description="目标正文字数",
+    )
 
 
 class OutlineResponse(BaseModel):
