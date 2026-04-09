@@ -83,39 +83,6 @@ def _resolve_chart_font() -> tuple[str, str | None]:
     return "DejaVu Sans", None
 
 
-def _auto_crop_whitespace(image_path: str, padding: int = 20) -> str:
-    """裁剪图片四周的纯白留白区域，保留少量 padding。"""
-    with Image.open(image_path) as img:
-        # 转为 RGB 确保一致性
-        if img.mode != "RGB":
-            img = img.convert("RGB")
-
-        # 获取非白色区域的边界框
-        bg = Image.new(img.mode, img.size, (255, 255, 255))
-        diff = Image.new("L", img.size)
-        for x in range(img.width):
-            for y in range(img.height):
-                r, g, b = img.getpixel((x, y))
-                # 接近纯白的像素视为背景（阈值 250）
-                if r < 250 or g < 250 or b < 250:
-                    diff.putpixel((x, y), 255)
-
-        bbox = diff.getbbox()
-        if bbox is None:
-            # 全白图片，不裁剪
-            return image_path
-
-        # 加 padding 并限制在图片范围内
-        left = max(0, bbox[0] - padding)
-        upper = max(0, bbox[1] - padding)
-        right = min(img.width, bbox[2] + padding)
-        lower = min(img.height, bbox[3] + padding)
-
-        cropped = img.crop((left, upper, right, lower))
-        cropped.save(image_path)
-
-    return image_path
-
 
 def _auto_crop_whitespace_fast(image_path: str, padding: int = 20) -> str:
     """快速裁剪图片四周的纯白留白区域（基于 numpy 加速）。"""
@@ -194,14 +161,13 @@ async def render_mermaid(mermaid_code: str, output_path: str) -> str:
             stderr=asyncio.subprocess.PIPE,
         )
         _, stderr = await proc.communicate()
+        if proc.returncode != 0:
+            raise RuntimeError(
+                f"Mermaid 渲染失败 (exit {proc.returncode}): {stderr.decode().strip()}"
+            )
     finally:
         Path(mmd_path).unlink(missing_ok=True)
         Path(pptr_config_path).unlink(missing_ok=True)
-
-    if proc.returncode != 0:
-        raise RuntimeError(
-            f"Mermaid 渲染失败 (exit {proc.returncode}): {stderr.decode().strip()}"
-        )
 
     # 渲染成功后裁剪白边
     try:

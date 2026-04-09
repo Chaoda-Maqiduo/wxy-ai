@@ -797,7 +797,6 @@ def _insert_picture_with_constraints(
     p = document.paragraphs[-1]
     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     # 强制单倍行距，避免被 Normal 样式的固定值（22pt）截断导致图片被文本覆盖
-    from docx.enum.text import WD_LINE_SPACING
     p.paragraph_format.line_spacing_rule = WD_LINE_SPACING.SINGLE
     p.paragraph_format.first_line_indent = Pt(0)
 
