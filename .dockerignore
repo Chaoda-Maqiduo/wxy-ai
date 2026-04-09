@@ -1,0 +1,12 @@
+# Default: ignore everything in build context.
+*
+
+# Include only files needed by the current Dockerfile.
+!Dockerfile
+!pyproject.toml
+!uv.lock
+!main.py
+!app/
+!app/**
+!scripts/
+!scripts/**

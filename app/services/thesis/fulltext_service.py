@@ -1,0 +1,44 @@
+from functools import lru_cache
+
+from langchain_core.output_parsers import StrOutputParser
+
+from app.config import get_settings
+from app.llm.client import create_llm
+from app.llm.prompts.thesis_fulltext_prompt import THESIS_FULLTEXT_PROMPT
+
+
+@lru_cache
+def _build_fulltext_chain():
+    settings = get_settings()
+    llm = create_llm(
+        model=settings.thesis_fulltext_model,
+        # deepseek-reasoner 不支持 temperature；create_llm 内部会自动过滤。
+        max_tokens=32768,
+    )
+    return THESIS_FULLTEXT_PROMPT | llm | StrOutputParser()
+
+
+async def generate_fulltext(
+    outline: str,
+    target_word_count: int = 8000,
+    references: str = "",
+) -> str:
+    """阶段②：根据大纲生成论文正文（含图片占位符）。"""
+
+    chain = _build_fulltext_chain()
+
+    # 经验修正：LLM 实际输出字数约为 prompt 中指定字数的 1.7 倍，
+    # 因此将传给 prompt 的字数除以 1.7，使最终输出贴近用户期望。
+    _CORRECTION_FACTOR = 1.7
+    prompt_word_count = int(target_word_count / _CORRECTION_FACTOR)
+    prompt_word_count_max = int((target_word_count + 1000) / _CORRECTION_FACTOR)
+
+    result = await chain.ainvoke(
+        {
+            "outline": outline,
+            "target_word_count": prompt_word_count,
+            "target_word_count_max": prompt_word_count_max,
+            "references": references,
+        }
+    )
+    return result.strip()
