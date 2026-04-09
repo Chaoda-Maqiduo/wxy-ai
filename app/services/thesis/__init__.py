@@ -77,8 +77,9 @@ async def generate_thesis_document(
 
     char_count = len(full_text)
     truncation_warning = False
-    if char_count < 7000:
-        logger.warning("全文仅 %d 字，可能存在截断", char_count)
+    truncation_threshold = int(target_word_count * 0.75)
+    if char_count < truncation_threshold:
+        logger.warning("全文仅 %d 字（低于目标 %d 字的 75%%），可能存在截断", char_count, target_word_count)
         truncation_warning = True
 
     default_abstract = {

@@ -171,7 +171,9 @@ def _add_pageref_field(paragraph, bookmark_name: str, cached_page: str = "?") ->
     run_begin = paragraph.add_run()
     fld_begin = OxmlElement("w:fldChar")
     fld_begin.set(qn("w:fldCharType"), "begin")
-    fld_begin.set(qn("w:dirty"), "true")
+    # NOTE: Do NOT set w:dirty here. Setting dirty="true" causes Word to
+    # auto-refresh the PAGEREF, but because body section restarts page
+    # numbering, Word resolves all fields to "1" before layout completes.
     run_begin._element.append(fld_begin)
 
     run_instr = paragraph.add_run()
@@ -186,7 +188,8 @@ def _add_pageref_field(paragraph, bookmark_name: str, cached_page: str = "?") ->
     run_sep._element.append(fld_sep)
 
     run_placeholder = paragraph.add_run(str(cached_page))
-    _set_run_font(run_placeholder, size_pt=12)
+    _set_run_font(run_placeholder, zh_font="Times New Roman",
+                  en_font="Times New Roman", size_pt=12)
 
     run_end = paragraph.add_run()
     fld_end = OxmlElement("w:fldChar")
@@ -663,10 +666,8 @@ def _add_toc_page(
     numbers are written as cached values so the TOC is immediately readable
     even when the application does not auto-update fields.
     """
-    # Estimate how many TOC pages we'll need (affects body start page)
-    toc_page_count = max(1, (len(toc_entries) + 16) // 17)  # ~17 entries/page
-    # Front matter: cover(1) + abstract_zh(1) + abstract_en(1) + TOC pages
-    body_start_page = 1  # body section restarts page numbering from 1
+    # body section restarts page numbering from 1
+    body_start_page = 1
     page_map = _estimate_page_numbers(full_text, toc_entries, body_start_page)
 
     # ---- TOC title ----
@@ -708,11 +709,12 @@ def _add_toc_page(
         estimated = str(page_map.get(bm, "1"))
         _add_pageref_field(p, bm, cached_page=estimated)
 
-    # Document setting: auto-update all fields on open (including PAGEREF)
-    doc_settings = document.settings.element
-    update_fields = OxmlElement("w:updateFields")
-    update_fields.set(qn("w:val"), "true")
-    doc_settings.append(update_fields)
+    # NOTE: We intentionally do NOT set w:updateFields here.
+    # Setting it causes Word to auto-refresh PAGEREF fields on open,
+    # but because body pages restart numbering at 1 (separate section),
+    # Word resolves all PAGEREFs to "1" before completing its layout pass.
+    # The pre-estimated cached page numbers are sufficiently accurate.
+    # Users can manually right-click the TOC -> "Update Field" if needed.
 
 
 
@@ -969,6 +971,19 @@ def build_word_document(
 
     document.add_page_break()
     _add_references_page(document, references)
+
+    # 修正文档核心属性，让 Windows 资源管理器正确识别并显示 Word 图标。
+    # python-docx 默认模板的创建时间是 2013 年，creator 是 "python-docx"，
+    # 这会导致 Windows 无法正确生成预览图标。
+    now = datetime.datetime.now()
+    core = document.core_properties
+    core.title = title
+    core.author = author
+    core.created = now
+    core.modified = now
+    core.last_modified_by = author
+    core.revision = 1
+    core.description = ""
 
     document.save(output_path)
     return output_path

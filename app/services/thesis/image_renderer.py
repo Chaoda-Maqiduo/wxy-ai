@@ -226,9 +226,12 @@ def _render_chart_sync(chart_spec: dict, output_path: str) -> str:
         else font_manager.FontProperties(family=font_name)
     )
 
-    plt.rcParams["font.family"] = [font_name]
-    plt.rcParams["font.sans-serif"] = [font_name]
-    plt.rcParams["axes.unicode_minus"] = False
+    # 使用 rc_context 代替全局 rcParams，避免多线程并发渲染时的竞态条件
+    rc_overrides = {
+        "font.family": [font_name],
+        "font.sans-serif": [font_name],
+        "axes.unicode_minus": False,
+    }
 
     chart_type = chart_spec["chart_type"]
     title = chart_spec.get("title", "")
@@ -237,76 +240,77 @@ def _render_chart_sync(chart_spec: dict, output_path: str) -> str:
     categories = chart_spec.get("categories", [])
     series = chart_spec.get("series", [])
 
-    fig, ax = plt.subplots(figsize=(10.24, 5.76), dpi=150)
-    fig.patch.set_facecolor("white")
-    ax.set_facecolor("white")
-    ax.grid(True, color="#D9D9D9", linewidth=0.8, alpha=0.8)
-    ax.set_axisbelow(True)
+    with plt.rc_context(rc_overrides):
+        fig, ax = plt.subplots(figsize=(10.24, 5.76), dpi=150)
+        fig.patch.set_facecolor("white")
+        ax.set_facecolor("white")
+        ax.grid(True, color="#D9D9D9", linewidth=0.8, alpha=0.8)
+        ax.set_axisbelow(True)
 
-    palette = ["#5B8FF9", "#5D7092", "#5AD8A6", "#F6BD16", "#E8684A"]
+        palette = ["#5B8FF9", "#5D7092", "#5AD8A6", "#F6BD16", "#E8684A"]
 
-    if chart_type == "line":
-        x_positions = list(range(len(categories)))
-        for index, item in enumerate(series):
-            ax.plot(
-                x_positions,
-                item["data"],
-                marker="o",
-                linewidth=2.2,
-                markersize=4.5,
-                color=palette[index % len(palette)],
-                label=item["name"],
+        if chart_type == "line":
+            x_positions = list(range(len(categories)))
+            for index, item in enumerate(series):
+                ax.plot(
+                    x_positions,
+                    item["data"],
+                    marker="o",
+                    linewidth=2.2,
+                    markersize=4.5,
+                    color=palette[index % len(palette)],
+                    label=item["name"],
+                )
+            ax.set_xticks(x_positions, categories)
+        elif chart_type == "bar":
+            x_positions = list(range(len(categories)))
+            series_count = len(series)
+            bar_width = 0.75 / max(series_count, 1)
+            for index, item in enumerate(series):
+                offsets = [
+                    x - 0.375 + bar_width * 0.5 + index * bar_width for x in x_positions
+                ]
+                ax.bar(
+                    offsets,
+                    item["data"],
+                    width=bar_width,
+                    color=palette[index % len(palette)],
+                    label=item["name"],
+                )
+            ax.set_xticks(x_positions, categories)
+        elif chart_type == "pie":
+            ax.clear()
+            ax.grid(False)
+            pie_series = series[0]
+            colors = [palette[index % len(palette)] for index in range(len(categories))]
+            _, pie_texts, pie_autotexts = ax.pie(
+                pie_series["data"],
+                labels=categories,
+                autopct="%1.1f%%",
+                startangle=90,
+                counterclock=False,
+                colors=colors,
+                wedgeprops={"edgecolor": "white", "linewidth": 1},
+                textprops={"fontsize": 10},
             )
-        ax.set_xticks(x_positions, categories)
-    elif chart_type == "bar":
-        x_positions = list(range(len(categories)))
-        series_count = len(series)
-        bar_width = 0.75 / max(series_count, 1)
-        for index, item in enumerate(series):
-            offsets = [
-                x - 0.375 + bar_width * 0.5 + index * bar_width for x in x_positions
-            ]
-            ax.bar(
-                offsets,
-                item["data"],
-                width=bar_width,
-                color=palette[index % len(palette)],
-                label=item["name"],
-            )
-        ax.set_xticks(x_positions, categories)
-    elif chart_type == "pie":
-        ax.clear()
-        ax.grid(False)
-        pie_series = series[0]
-        colors = [palette[index % len(palette)] for index in range(len(categories))]
-        _, pie_texts, pie_autotexts = ax.pie(
-            pie_series["data"],
-            labels=categories,
-            autopct="%1.1f%%",
-            startangle=90,
-            counterclock=False,
-            colors=colors,
-            wedgeprops={"edgecolor": "white", "linewidth": 1},
-            textprops={"fontsize": 10},
-        )
-        for text in [*pie_texts, *pie_autotexts]:
-            text.set_fontproperties(font_prop)
-        ax.axis("equal")
-    else:
-        raise ValueError(f"Unsupported chart_type: {chart_type}")
+            for text in [*pie_texts, *pie_autotexts]:
+                text.set_fontproperties(font_prop)
+            ax.axis("equal")
+        else:
+            raise ValueError(f"Unsupported chart_type: {chart_type}")
 
-    ax.set_title(title, fontsize=18, pad=18, fontproperties=font_prop)
-    if chart_type != "pie":
-        ax.set_xlabel(x_label, fontsize=12, fontproperties=font_prop)
-        ax.set_ylabel(y_label, fontsize=12, fontproperties=font_prop)
-        for label in [*ax.get_xticklabels(), *ax.get_yticklabels()]:
-            label.set_fontproperties(font_prop)
-        if any(item.get("name") for item in series):
-            ax.legend(frameon=False, prop=font_prop)
+        ax.set_title(title, fontsize=18, pad=18, fontproperties=font_prop)
+        if chart_type != "pie":
+            ax.set_xlabel(x_label, fontsize=12, fontproperties=font_prop)
+            ax.set_ylabel(y_label, fontsize=12, fontproperties=font_prop)
+            for label in [*ax.get_xticklabels(), *ax.get_yticklabels()]:
+                label.set_fontproperties(font_prop)
+            if any(item.get("name") for item in series):
+                ax.legend(frameon=False, prop=font_prop)
 
-    fig.tight_layout()
-    fig.savefig(output_path, format="png", facecolor="white", bbox_inches="tight")
-    plt.close(fig)
+        fig.tight_layout()
+        fig.savefig(output_path, format="png", facecolor="white", bbox_inches="tight")
+        plt.close(fig)
     return output_path
 
 
