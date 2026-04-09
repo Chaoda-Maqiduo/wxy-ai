@@ -26,11 +26,18 @@ async def generate_fulltext(
     """阶段②：根据大纲生成论文正文（含图片占位符）。"""
 
     chain = _build_fulltext_chain()
+
+    # 经验修正：LLM 实际输出字数约为 prompt 中指定字数的 1.7 倍，
+    # 因此将传给 prompt 的字数除以 1.7，使最终输出贴近用户期望。
+    _CORRECTION_FACTOR = 1.7
+    prompt_word_count = int(target_word_count / _CORRECTION_FACTOR)
+    prompt_word_count_max = int((target_word_count + 1000) / _CORRECTION_FACTOR)
+
     result = await chain.ainvoke(
         {
             "outline": outline,
-            "target_word_count": target_word_count,
-            "target_word_count_max": target_word_count + 1000,
+            "target_word_count": prompt_word_count,
+            "target_word_count_max": prompt_word_count_max,
             "references": references,
         }
     )

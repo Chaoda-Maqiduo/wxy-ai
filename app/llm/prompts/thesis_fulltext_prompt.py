@@ -31,7 +31,10 @@ THESIS_FULLTEXT_PROMPT = ChatPromptTemplate.from_messages(
                 "## 输出格式\n"
                 "- 以纯文本输出，使用上述标题编号规范\n"
                 "- 每章内容充实，包含理论分析、技术细节或实际操作描述\n"
-                "- 全文字数建议控制在 {target_word_count} 至 {target_word_count_max} 字之间\n"
+                "- 全文正文总字数必须严格控制在 {target_word_count} 至 {target_word_count_max} 字之间，这是硬性要求\n"
+                "- 超出 {target_word_count_max} 字视为不合格，请在写作过程中持续关注字数\n"
+                "- 每个一级章节的篇幅应大致均匀，单章不超过总字数的 30%\n"
+                "- 宁可精炼表达也不要注水凑字数；同样也不要过度展开导致超字数\n"
                 "- 需要展示结构化数据时使用 Markdown 表格（如需求列表、技术对比、测试结果等）\n"
                 "- 每个表格上方写表号和标题，格式：表X-X 表格标题（X为章号-序号）\n"
                 "- 全文建议包含 3-6 个表格\n"
@@ -127,7 +130,8 @@ THESIS_FULLTEXT_PROMPT = ChatPromptTemplate.from_messages(
                 "论文大纲如下：\n\n"
                 "{outline}\n\n"
                 "请根据以上大纲，撰写完整论文正文。\n"
-                "再次强调：直接输出论文正文，不要写任何开场白、说明、任务复述或结尾说明。"
+                "再次强调：直接输出论文正文，不要写任何开场白、说明、任务复述或结尾说明。\n"
+                "字数硬性要求：全文正文总字数必须在 {target_word_count} 至 {target_word_count_max} 字之间，严禁超出。"
             ),
         ),
     ]

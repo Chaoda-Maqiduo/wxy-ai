@@ -428,7 +428,7 @@ class TwelveAIGenerator(ImageGenerator):
             }
         }
 
-        async with httpx.AsyncClient(timeout=120.0) as client:
+        async with httpx.AsyncClient(timeout=300.0) as client:
             resp = await client.post(url, json=payload)
             resp.raise_for_status()
             data = resp.json()
@@ -470,7 +470,7 @@ async def render_all_figures(
         output_path = f"{output_dir}/fig_{index}.png"
         method = placeholder.get("render_method")
 
-        max_retries = 5
+        max_retries = 3
         attempt = 0
         while attempt < max_retries:
             try:

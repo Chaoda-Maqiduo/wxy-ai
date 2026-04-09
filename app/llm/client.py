@@ -38,10 +38,32 @@ def create_llm(
         raise ValueError("DEEPSEEK_API_KEY is not configured")
 
     resolved_model = model or settings.deepseek_model
+    
+    if "claude" in resolved_model.lower():
+        from langchain_anthropic import ChatAnthropic
+        anthropic_kwargs = {
+            "model_name": resolved_model,
+            "anthropic_api_key": settings.twelveai_api_key,
+            "anthropic_api_url": "https://cdn.12ai.org",
+            "max_tokens": max_tokens if max_tokens is not None else 4096,
+            "timeout": 3600,
+        }
+        if temperature is not None:
+            anthropic_kwargs["temperature"] = temperature
+        return ChatAnthropic(**anthropic_kwargs)
+        
+    # 动态路由：如果是 gemini 等通过 12AI 提供的模型，切换 provider
+    if "gemini" in resolved_model.lower():
+        api_key = settings.twelveai_api_key
+        base_url = "https://api.12ai.org/v1"
+    else:
+        api_key = settings.deepseek_api_key
+        base_url = settings.deepseek_base_url
+
     kwargs: dict[str, object] = {
         "model": resolved_model,
-        "api_key": settings.deepseek_api_key,
-        "base_url": settings.deepseek_base_url,
+        "api_key": api_key,
+        "base_url": base_url,
     }
 
     # deepseek-reasoner 不支持 temperature / top_p 等采样参数。

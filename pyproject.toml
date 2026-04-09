@@ -8,6 +8,7 @@ dependencies = [
     "fastapi>=0.115.0",
     "httpx>=0.28.1",
     "langchain>=1.2.12",
+    "langchain-anthropic>=0.1.0",
     "langchain-openai>=1.0.3",
     "matplotlib>=3.10.8",
     "pillow>=11.0.0",
