@@ -15,34 +15,66 @@ class OutlineRequest(BaseModel):
     """生成论文大纲请求。"""
 
     title: str = Field(..., min_length=2, max_length=200, description="论文标题")
-    target_word_count: Literal[8000, 10000, 12000, 15000, 20000] = Field(
+    target_word_count: int = Field(
         default=8000,
         description="目标正文字数",
     )
+    codetype: str = Field(default="否", description="代码语言类型，否=不生成代码")
+    language: str = Field(default="否", description="是否引用外文文献：是/否")
+    three_level: bool = Field(default=False, description="是否使用三级目录结构")
+    aboutmsg: str = Field(default="", max_length=1000, description="写作方向补充说明")
 
 
-class OutlineResponse(BaseModel):
+class OutlineSection(BaseModel):
+    """论文大纲小节。"""
+
+    name: str
+    abstract: str
+
+
+class OutlineChapter(BaseModel):
+    """论文大纲章节。"""
+
+    chapter: str
+    sections: list[OutlineSection]
+
+
+class OutlinePayload(BaseModel):
+    """结构化大纲载荷。"""
+
+    outline: list[OutlineChapter]
+    abstract: str = ""
+    keywords: str = ""
+
+
+class OutlineResponse(OutlinePayload):
     """生成论文大纲响应。"""
 
     title: str
-    outline: str = Field(..., description="Markdown 格式大纲")
 
 
 class GenerateRequest(BaseModel):
     """提交论文生成任务请求。"""
 
     title: str = Field(..., min_length=2, max_length=200, description="论文标题")
-    outline: str = Field(..., min_length=50, description="用户确认/修改后的论文大纲")
+    outline_json: list[OutlineChapter] = Field(
+        ...,
+        description="JSON 格式大纲, 结构同 OutlineResponse.outline",
+    )
+    target_word_count: int = Field(
+        default=8000,
+        description="目标正文字数",
+    )
+    codetype: str = Field(default="否")
+    wxquote: str = Field(default="标注", description="标注/不标注")
+    language: str = Field(default="否")
+    wxnum: int = Field(default=25, description="参考文献条数")
     author: str = Field(default="作者姓名", description="作者姓名")
     advisor: str = Field(default="指导教师（姓名、职称、单位）", description="指导教师")
     degree_type: str = Field(default="学士", description="学位类别")
     major: str = Field(default="专业名称", description="专业")
     school: str = Field(default="XX大学XX学院", description="学院（系）")
     year_month: str = Field(default="", description="留空则自动填当前年月")
-    target_word_count: Literal[8000, 10000, 12000, 15000, 20000] = Field(
-        default=8000,
-        description="目标正文字数",
-    )
 
 
 class GenerateSubmitResponse(BaseModel):
@@ -58,6 +90,7 @@ class TaskStatusResponse(BaseModel):
     task_id: str
     status: Literal["pending", "completed", "failed"]
     message: str = ""
+    file_key: str = Field(default="", description="七牛云文件 key，生成完成后填充")
     figure_count: int = Field(default=0, ge=0)
     mermaid_count: int = Field(default=0, ge=0)
     chart_count: int = Field(default=0, ge=0)
@@ -202,8 +235,11 @@ __all__ = [
     "GenerateRequest",
     "GenerateSubmitResponse",
     "MermaidFigure",
+    "OutlineChapter",
+    "OutlinePayload",
     "OutlineRequest",
     "OutlineResponse",
+    "OutlineSection",
     "TaskStatusResponse",
     "extract_figure_placeholders",
     "split_by_render_method",

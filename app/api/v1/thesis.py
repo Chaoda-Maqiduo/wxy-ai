@@ -13,6 +13,7 @@ from fastapi.responses import FileResponse
 from app.schemas.thesis import (
     GenerateRequest,
     GenerateSubmitResponse,
+    OutlineChapter,
     OutlineRequest,
     OutlineResponse,
     TaskStatusResponse,
@@ -42,7 +43,7 @@ def _read_status(task_id: str) -> dict[str, Any] | None:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def _load_generate_outline() -> Callable[[str], Awaitable[str]]:
+def _load_generate_outline() -> Callable[..., Awaitable[dict[str, Any]]]:
     try:
         module = import_module("app.services.thesis.outline_service")
         return getattr(module, "generate_outline")
@@ -69,6 +70,10 @@ async def _run_generate(
     title: str,
     outline: str,
     cover_kwargs: dict[str, Any] | None = None,
+    codetype: str = "否",
+    wxquote: str = "标注",
+    language: str = "否",
+    wxnum: int = 25,
 ) -> None:
     """后台执行论文生成流程并更新任务状态。"""
 
@@ -79,12 +84,22 @@ async def _run_generate(
             task_id=task_id,
             title=title,
             outline=outline,
+            codetype=codetype,
+            wxquote=wxquote,
+            language=language,
+            wxnum=wxnum,
             **cover_kwargs,
         )
+        from app.services.storage.qiniu_uploader import upload_to_qiniu
+        from app.services.storage.java_callback import notify_java
+
+        file_key = await upload_to_qiniu(_result_value(result, "docx_path", ""), task_id)
+        await notify_java(task_id, file_key, status="completed")
         _write_status(
             task_id,
             "completed",
             message="论文生成完成",
+            file_key=file_key,
             docx_path=_result_value(result, "docx_path", ""),
             figure_count=_result_value(result, "figure_count", 0),
             mermaid_count=_result_value(result, "mermaid_count", 0),
@@ -96,7 +111,26 @@ async def _run_generate(
         )
     except Exception as exc:  # noqa: BLE001
         logger.exception("论文生成失败")
-        _write_status(task_id, "failed", message=f"生成失败: {exc}")
+        error_msg = str(exc)[:500]
+        _write_status(task_id, "failed", message=f"生成失败: {error_msg}")
+        try:
+            from app.services.storage.java_callback import notify_java
+
+            await notify_java(task_id, file_key="", status="failed", error_msg=error_msg)
+        except Exception:  # noqa: BLE001
+            logger.exception("失败回调 Java 失败")
+
+
+def _json_outline_to_markdown(outline: list[OutlineChapter]) -> str:
+    lines: list[str] = []
+    for chapter in outline:
+        lines.append(f"## {chapter.chapter}")
+        for section in chapter.sections:
+            lines.append(f"### {section.name}")
+            if section.abstract:
+                lines.append(section.abstract.strip())
+        lines.append("")
+    return "\n".join(lines).strip()
 
 
 @router.post("/outline", response_model=OutlineResponse)
@@ -105,12 +139,19 @@ async def create_outline(req: OutlineRequest) -> OutlineResponse:
 
     try:
         generate_outline = _load_generate_outline()
-        outline = await generate_outline(req.title, getattr(req, "target_word_count", 8000))
+        outline_data = await generate_outline(
+            req.title,
+            req.target_word_count,
+            req.codetype,
+            req.language,
+            req.three_level,
+            req.aboutmsg,
+        )
     except Exception as exc:  # noqa: BLE001
         logger.exception("大纲生成失败")
         raise HTTPException(status_code=500, detail=f"大纲生成失败: {exc}") from exc
 
-    return OutlineResponse(title=req.title, outline=outline)
+    return OutlineResponse(title=req.title, **outline_data)
 
 
 @router.post("/generate", response_model=GenerateSubmitResponse)
@@ -131,7 +172,17 @@ async def generate_document(
         "school": req.school,
         "year_month": req.year_month,
     }
-    background_tasks.add_task(_run_generate, task_id, req.title, req.outline, cover_kwargs)
+    background_tasks.add_task(
+        _run_generate,
+        task_id,
+        req.title,
+        _json_outline_to_markdown(req.outline_json),
+        cover_kwargs,
+        req.codetype,
+        req.wxquote,
+        req.language,
+        req.wxnum,
+    )
     return GenerateSubmitResponse(task_id=task_id)
 
 

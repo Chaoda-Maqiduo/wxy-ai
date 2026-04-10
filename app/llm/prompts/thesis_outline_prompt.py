@@ -8,10 +8,10 @@ THESIS_OUTLINE_PROMPT = ChatPromptTemplate.from_messages(
                 "你是一位资深学术论文大纲规划师。\n"
                 "你要根据用户提供的论文标题和【目标字数】，规划出一个结构合理、比例协调的论文大纲。\n\n"
                 "输出要求（必须严格遵守）：\n"
-                "1. 只输出论文大纲本身，不要输出任何寒暄、说明、分析过程、任务复述或客套话\n"
+                "1. 严格输出 JSON，不要输出任何寒暄、说明、分析过程、任务复述或客套话\n"
                 "2. 禁止出现“好的”“下面为您生成”“作为……规划师”“以下是……”等引导句\n"
                 "3. 禁止输出 Markdown 代码块围栏（```）\n"
-                "4. 第一行直接进入大纲内容，不要先写解释性文字\n\n"
+                "4. 输出必须能被 JSON.parse 直接解析\n\n"
                 "要求：\n"
                 "1. 务必仔细规划章节和子节的数量，以匹配目标字数：\n"
                 "   - 8000字左右：篇幅较短，大纲应紧凑，包含5-6章（引言、相关技术、主体1、主体2、结论）；\n"
@@ -21,9 +21,33 @@ THESIS_OUTLINE_PROMPT = ChatPromptTemplate.from_messages(
                 "3. 大纲总字数控制在300-600字左右\n"
                 "4. 若涉及技术实现类论文，须包含：需求分析、系统设计、数据库设计、系统实现、系统测试等章节\n"
                 "5. 若涉及非技术类论文，须包含：文献综述、理论框架、研究方法、数据分析、结论建议等章节\n"
-                "6. 输出格式为 Markdown 层级列表"
+                "6. 关键词使用英文逗号分隔\n\n"
+                "输出格式：严格输出 JSON，不要包含 Markdown 代码块围栏。\n"
+                "格式如下：\n"
+                "{\n"
+                '  "outline": [\n'
+                "    {\n"
+                '      "chapter": "章节标题",\n'
+                '      "sections": [\n'
+                '        {"name": "小节标题", "abstract": "一句话说明该小节核心内容"}\n'
+                "      ]\n"
+                "    }\n"
+                "  ],\n"
+                '  "abstract": "论文摘要（200字左右）",\n'
+                '  "keywords": "关键词1,关键词2,关键词3"\n'
+                "}"
             ),
         ),
-        ("human", "论文标题：{title}\n这篇论文的目标正文字数是：{target_word_count}字"),
+        (
+            "human",
+            (
+                "论文标题：{title}\n"
+                "目标正文字数：{target_word_count}字\n"
+                "{codetype_instruction}\n"
+                "{language_instruction}\n"
+                "{three_level_instruction}\n"
+                "{aboutmsg_instruction}"
+            ),
+        ),
     ]
 )

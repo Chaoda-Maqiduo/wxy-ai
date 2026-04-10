@@ -51,6 +51,10 @@ async def generate_thesis_document(
     title: str,
     outline: str,
     target_word_count: int = 8000,
+    codetype: str = "否",
+    wxquote: str = "标注",
+    language: str = "否",
+    wxnum: int = 25,
     author: str = "作者姓名",
     advisor: str = "指导教师",
     degree_type: str = "学士",
@@ -67,12 +71,24 @@ async def generate_thesis_document(
     output_dir = f"app/output/{task_id}"
     safe_title = sanitize_filename(title)
 
-    references = await _best_effort(generate_references(title, outline), "", "参考文献生成")
+    references = ""
+    if wxquote != "不标注":
+        references = await _best_effort(
+            generate_references(
+                title,
+                outline,
+                wxnum=wxnum,
+                include_english=language == "是",
+            ),
+            "",
+            "参考文献生成",
+        )
 
     full_text = await generate_fulltext(
         outline,
         target_word_count=target_word_count,
         references=references,
+        codetype=codetype,
     )
 
     char_count = len(full_text)

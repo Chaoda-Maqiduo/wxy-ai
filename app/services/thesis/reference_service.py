@@ -131,7 +131,12 @@ async def _filter_results(
         return results[:fallback_num]
 
 
-async def generate_references(title: str, outline: str) -> str:
+async def generate_references(
+    title: str,
+    outline: str,
+    wxnum: int = 25,
+    include_english: bool = True,
+) -> str:
     """
     生成参考文献列表。
     SERPAPI_KEY 未配置时直接返回空字符串。
@@ -161,15 +166,18 @@ async def generate_references(title: str, outline: str) -> str:
         zh_query = title
         en_queries = [title]
 
-    search_tasks = [_search_scholar(zh_query, num=20)] + [
-        _search_scholar(query, num=15) for query in en_queries
-    ]
+    zh_search_num = max(10, min(wxnum, 30))
+    en_search_num = max(8, min(wxnum, 20))
+    search_tasks = [_search_scholar(zh_query, num=zh_search_num)]
+    if include_english:
+        search_tasks.extend(_search_scholar(query, num=en_search_num) for query in en_queries)
     grouped_results = await asyncio.gather(*search_tasks)
 
     zh_results = grouped_results[0]
     en_results: list[dict] = []
-    for group in grouped_results[1:]:
-        en_results.extend(group)
+    if include_english:
+        for group in grouped_results[1:]:
+            en_results.extend(group)
 
     seen_titles: set[str] = set()
 
@@ -190,16 +198,18 @@ async def generate_references(title: str, outline: str) -> str:
         logger.warning("参考文献搜索结果为空，跳过生成")
         return ""
 
-    zh_filtered, en_filtered = await asyncio.gather(
-        _filter_results(llm, title, zh_results, "中文", fallback_num=15),
-        _filter_results(llm, title, en_results, "英文", fallback_num=10),
-    )
+    if include_english:
+        zh_filtered, en_filtered = await asyncio.gather(
+            _filter_results(llm, title, zh_results, "中文", fallback_num=max(10, wxnum)),
+            _filter_results(llm, title, en_results, "英文", fallback_num=max(8, min(wxnum, 15))),
+        )
+    else:
+        zh_filtered = await _filter_results(llm, title, zh_results, "中文", fallback_num=max(10, wxnum))
+        en_filtered = []
 
-    # 目标：至少产出 15 条参考文献
-    # 中文优先，不足则用英文补齐
-    target_total = 15
-    zh_max = min(len(zh_filtered), 11)  # 中文最多 11 条
-    en_max = max(target_total - zh_max, 6)  # 剩余由英文补齐，至少 6 条
+    target_total = max(1, wxnum)
+    zh_max = min(len(zh_filtered), target_total if not include_english else max(target_total - 6, int(target_total * 0.6)))
+    en_max = max(target_total - zh_max, 0)
 
     lines: list[str] = []
     idx = 1

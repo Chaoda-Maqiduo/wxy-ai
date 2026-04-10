@@ -22,6 +22,7 @@ async def generate_fulltext(
     outline: str,
     target_word_count: int = 8000,
     references: str = "",
+    codetype: str = "否",
 ) -> str:
     """阶段②：根据大纲生成论文正文（含图片占位符）。"""
 
@@ -39,6 +40,11 @@ async def generate_fulltext(
             "target_word_count": prompt_word_count,
             "target_word_count_max": prompt_word_count_max,
             "references": references,
+            "codetype_instruction": (
+                f"本论文涉及 {codetype} 代码实现，请在系统设计与实现章节中嵌入核心代码片段"
+                if codetype and codetype != "否"
+                else ""
+            ),
         }
     )
     return result.strip()

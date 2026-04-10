@@ -851,7 +851,7 @@ def build_word_document(
     _make_blank_section(document)
     _add_toc_page(document, toc_entries, full_text=full_text)
 
-    # Section 3：正文 + 致谢 + 参考文献
+    # Section 3：正文 + 参考文献 + 致谢
     _make_blank_section(document)
     _setup_body_section(document, title)
 
@@ -966,10 +966,10 @@ def build_word_document(
         placeholder_idx += 1
 
     document.add_page_break()
-    _add_acknowledgment_page(document, acknowledgment)
+    _add_references_page(document, references)
 
     document.add_page_break()
-    _add_references_page(document, references)
+    _add_acknowledgment_page(document, acknowledgment)
 
     # 修正文档核心属性，让 Windows 资源管理器正确识别并显示 Word 图标。
     # python-docx 默认模板的创建时间是 2013 年，creator 是 "python-docx"，

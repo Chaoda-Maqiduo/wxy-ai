@@ -129,6 +129,7 @@ THESIS_FULLTEXT_PROMPT = ChatPromptTemplate.from_messages(
             (
                 "论文大纲如下：\n\n"
                 "{outline}\n\n"
+                "{codetype_instruction}\n"
                 "请根据以上大纲，撰写完整论文正文。\n"
                 "再次强调：直接输出论文正文，不要写任何开场白、说明、任务复述或结尾说明。\n"
                 "字数硬性要求：全文正文总字数必须在 {target_word_count} 至 {target_word_count_max} 字之间，严禁超出。"

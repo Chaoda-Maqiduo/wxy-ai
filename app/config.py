@@ -24,6 +24,11 @@ _ENV_KEYS = (
     "TWELVEAI_API_KEY",
     "TWELVEAI_IMAGE_MODEL",
     "SERPAPI_KEY",
+    "QINIU_ACCESS_KEY",
+    "QINIU_SECRET_KEY",
+    "QINIU_BUCKET",
+    "PAPER_CALLBACK_URL",
+    "PAPER_CALLBACK_SECRET",
 )
 
 
@@ -89,6 +94,13 @@ class Settings(BaseModel):
     )
     # SerpAPI key for Google Scholar reference search (optional).
     serpapi_key: str = Field(default="", validation_alias="SERPAPI_KEY")
+    # 七牛云配置。
+    qiniu_access_key: str = Field(default="", validation_alias="QINIU_ACCESS_KEY")
+    qiniu_secret_key: str = Field(default="", validation_alias="QINIU_SECRET_KEY")
+    qiniu_bucket: str = Field(default="", validation_alias="QINIU_BUCKET")
+    # Java 回调配置。
+    paper_callback_url: str = Field(default="", validation_alias="PAPER_CALLBACK_URL")
+    paper_callback_secret: str = Field(default="", validation_alias="PAPER_CALLBACK_SECRET")
 
 
 @lru_cache
