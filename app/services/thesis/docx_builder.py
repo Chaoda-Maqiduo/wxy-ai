@@ -1,8 +1,8 @@
 import datetime
-import logging
 import re
 from pathlib import Path
 
+from PIL import Image
 from docx import Document
 from docx.enum.section import WD_SECTION
 from docx.enum.text import (
@@ -14,20 +14,19 @@ from docx.enum.text import (
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Cm, Pt, RGBColor
-from PIL import Image
 
 FIGURE_BLOCK_PATTERN = r"<<FIGURE>>\s*.*?\s*<</FIGURE>>"
 CITATION_PATTERN = re.compile(r"\[(\d{1,3})\]")
 
 
 def _set_run_font(
-    run,
-    zh_font: str = "宋体",
-    en_font: str = "Times New Roman",
-    size_pt: float | None = None,
-    bold: bool | None = None,
-    underline: bool | None = None,
-    color_rgb: RGBColor | None = None,
+        run,
+        zh_font: str = "宋体",
+        en_font: str = "Times New Roman",
+        size_pt: float | None = None,
+        bold: bool | None = None,
+        underline: bool | None = None,
+        color_rgb: RGBColor | None = None,
 ) -> None:
     """统一设置 run 的中英文字体、字号和样式。"""
     r_pr = run._element.get_or_add_rPr()
@@ -71,8 +70,8 @@ def _restart_page_numbering(section, start: int = 1) -> None:
 
 
 def _pre_scan_headings(
-    full_text: str,
-    title: str = "",
+        full_text: str,
+        title: str = "",
 ) -> list[dict[str, object]]:
     """Pre-scan body Markdown to extract level 1-3 headings for the TOC page.
 
@@ -197,8 +196,6 @@ def _add_pageref_field(paragraph, bookmark_name: str, cached_page: str = "?") ->
     run_end._element.append(fld_end)
 
 
-
-
 def _clear_header_footer(section) -> None:
     """清空当前 section 的页眉页脚。"""
     section.header.is_linked_to_previous = False
@@ -304,10 +301,10 @@ def _collect_table_lines(lines: list[str], start: int) -> tuple[list[list[str]],
 
 
 def _add_markdown_text_to_paragraph(
-    paragraph,
-    text: str,
-    is_header: bool = False,
-    is_table: bool = False,
+        paragraph,
+        text: str,
+        is_header: bool = False,
+        is_table: bool = False,
 ) -> None:
     """解析 Markdown 内联加粗并写入段落。"""
     text = text.replace("~", "")
@@ -411,14 +408,14 @@ def _setup_page(document: Document) -> None:
 
 
 def _add_cover_page(
-    document: Document,
-    title: str,
-    author: str,
-    advisor: str,
-    degree_type: str,
-    major: str,
-    school: str,
-    year_month: str,
+        document: Document,
+        title: str,
+        author: str,
+        advisor: str,
+        degree_type: str,
+        major: str,
+        school: str,
+        year_month: str,
 ) -> None:
     """构建封面页。"""
 
@@ -566,9 +563,9 @@ def _add_abstract_en_page(document: Document, abstract: str, keywords: str) -> N
 
 
 def _estimate_page_numbers(
-    full_text: str,
-    toc_entries: list[dict[str, object]],
-    body_start_page: int = 1,
+        full_text: str,
+        toc_entries: list[dict[str, object]],
+        body_start_page: int = 1,
 ) -> dict[str, int]:
     """Estimate the page number for each TOC heading accurately based on lines.
 
@@ -583,35 +580,35 @@ def _estimate_page_numbers(
     LINES_PER_PAGE = 31
     CHARS_PER_LINE = 36
     LINES_PER_IMAGE = 14
-    
+
     text_with_markers = re.sub(FIGURE_BLOCK_PATTERN, "\n---image---\n", full_text, flags=re.DOTALL)
-    
+
     page = body_start_page
     line_count = 0
     page_map: dict[str, int] = {}
-    
+
     heading_queue: list[dict[str, object]] = list(toc_entries)
     hq_idx = 0
-    
+
     for line in text_with_markers.split("\n"):
         stripped = line.strip()
-        
+
         if stripped == "---pagebreak---":
             if line_count > 0:
                 page += 1
                 line_count = 0
             continue
-            
+
         if stripped == "---image---":
             line_count += LINES_PER_IMAGE
             if line_count >= LINES_PER_PAGE:
                 page += 1
                 line_count = line_count % LINES_PER_PAGE
             continue
-            
+
         if not stripped:
             continue
-            
+
         level = 0
         text = ""
         added_lines = 1
@@ -625,7 +622,7 @@ def _estimate_page_numbers(
         elif stripped.startswith("# "):
             level, text = 1, stripped[2:].strip()
             added_lines = 3
-        elif stripped.startswith("|"): 
+        elif stripped.startswith("|"):
             added_lines = 1
         elif stripped.startswith("```"):
             added_lines = 1
@@ -651,9 +648,9 @@ def _estimate_page_numbers(
 
 
 def _add_toc_page(
-    document: Document,
-    toc_entries: list[dict[str, object]],
-    full_text: str = "",
+        document: Document,
+        toc_entries: list[dict[str, object]],
+        full_text: str = "",
 ) -> None:
     """Generate a visible TOC page with PAGEREF dynamic page numbers.
 
@@ -717,7 +714,6 @@ def _add_toc_page(
     # Users can manually right-click the TOC -> "Update Field" if needed.
 
 
-
 def _add_acknowledgment_page(document: Document, acknowledgment: str) -> None:
     """致谢页。"""
     p_title = document.add_paragraph()
@@ -770,10 +766,10 @@ def _add_references_page(document: Document, references: str) -> None:
 
 
 def _insert_picture_with_constraints(
-    document: Document,
-    image_path: str,
-    max_width_cm: float = 15.5,
-    max_height_cm: float = 9.5,
+        document: Document,
+        image_path: str,
+        max_width_cm: float = 15.5,
+        max_height_cm: float = 9.5,
 ) -> None:
     """
     插入图片并限制最大宽高，避免图片过高导致版面被大面积占用。
@@ -805,23 +801,23 @@ def _insert_picture_with_constraints(
 
 
 def build_word_document(
-    full_text: str,
-    placeholders: list[dict],
-    image_paths: dict[int, str | None],
-    output_path: str = "app/output/thesis.docx",
-    title: str = "论文题目",
-    author: str = "作者姓名",
-    advisor: str = "指导教师",
-    degree_type: str = "学士",
-    major: str = "专业名称",
-    school: str = "XX大学XX学院",
-    year_month: str = "",
-    abstract_zh: str = "",
-    abstract_en: str = "",
-    keywords_zh: str = "",
-    keywords_en: str = "",
-    acknowledgment: str = "",
-    references: str = "",
+        full_text: str,
+        placeholders: list[dict],
+        image_paths: dict[int, str | None],
+        output_path: str = "app/output/thesis.docx",
+        title: str = "论文题目",
+        author: str = "作者姓名",
+        advisor: str = "指导教师",
+        degree_type: str = "学士",
+        major: str = "专业名称",
+        school: str = "XX大学XX学院",
+        year_month: str = "",
+        abstract_zh: str = "",
+        abstract_en: str = "",
+        keywords_zh: str = "",
+        keywords_en: str = "",
+        acknowledgment: str = "",
+        references: str = "",
 ) -> str:
     """将论文正文、图片与前后置页面构造成 Word 文档。"""
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
@@ -899,9 +895,9 @@ def build_word_document(
                 paragraph = document.add_heading(heading_text, level=3)
                 paragraph.paragraph_format.first_line_indent = Pt(0)
                 if (
-                    _next_toc
-                    and _next_toc["text"] == heading_text.strip()
-                    and _next_toc["level"] == 3
+                        _next_toc
+                        and _next_toc["text"] == heading_text.strip()
+                        and _next_toc["level"] == 3
                 ):
                     _add_bookmark(paragraph, str(_next_toc["bookmark"]), int(_next_toc["bookmark_id"]))
                     _next_toc = next(_toc_iter, None)
@@ -910,9 +906,9 @@ def build_word_document(
                 paragraph = document.add_heading(heading_text, level=2)
                 paragraph.paragraph_format.first_line_indent = Pt(0)
                 if (
-                    _next_toc
-                    and _next_toc["text"] == heading_text.strip()
-                    and _next_toc["level"] == 2
+                        _next_toc
+                        and _next_toc["text"] == heading_text.strip()
+                        and _next_toc["level"] == 2
                 ):
                     _add_bookmark(paragraph, str(_next_toc["bookmark"]), int(_next_toc["bookmark_id"]))
                     _next_toc = next(_toc_iter, None)
@@ -921,9 +917,9 @@ def build_word_document(
                 paragraph = document.add_heading(heading_text, level=1)
                 paragraph.paragraph_format.first_line_indent = Pt(0)
                 if (
-                    _next_toc
-                    and _next_toc["text"] == heading_text.strip()
-                    and _next_toc["level"] == 1
+                        _next_toc
+                        and _next_toc["text"] == heading_text.strip()
+                        and _next_toc["level"] == 1
                 ):
                     _add_bookmark(paragraph, str(_next_toc["bookmark"]), int(_next_toc["bookmark_id"]))
                     _next_toc = next(_toc_iter, None)

@@ -100,11 +100,11 @@ def _format_one_reference(item: dict, index: int, is_zh: bool) -> str:
 
 
 async def _filter_results(
-    llm,
-    title: str,
-    results: list[dict],
-    label: str,
-    fallback_num: int = 5,
+        llm,
+        title: str,
+        results: list[dict],
+        label: str,
+        fallback_num: int = 5,
 ) -> list[dict]:
     """基于标题和 summary 进行相关性筛选，失败则取前 N 条。"""
     if not results:
@@ -132,10 +132,10 @@ async def _filter_results(
 
 
 async def generate_references(
-    title: str,
-    outline: str,
-    wxnum: int = 25,
-    include_english: bool = True,
+        title: str,
+        outline: str,
+        wxnum: int = 25,
+        include_english: bool = True,
 ) -> str:
     """
     生成参考文献列表。
@@ -208,7 +208,8 @@ async def generate_references(
         en_filtered = []
 
     target_total = max(1, wxnum)
-    zh_max = min(len(zh_filtered), target_total if not include_english else max(target_total - 6, int(target_total * 0.6)))
+    zh_max = min(len(zh_filtered),
+                 target_total if not include_english else max(target_total - 6, int(target_total * 0.6)))
     en_max = max(target_total - zh_max, 0)
 
     lines: list[str] = []

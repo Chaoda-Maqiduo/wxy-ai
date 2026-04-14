@@ -27,9 +27,9 @@ def get_llm() -> ChatOpenAI:
 
 
 def create_llm(
-    model: str | None = None,
-    temperature: float | None = None,
-    max_tokens: int | None = None,
+        model: str | None = None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
 ) -> BaseChatModel:
     """创建通用 LLM 客户端，支持按场景覆盖模型参数。"""
 
@@ -38,7 +38,7 @@ def create_llm(
         raise ValueError("DEEPSEEK_API_KEY is not configured")
 
     resolved_model = model or settings.deepseek_model
-    
+
     if "claude" in resolved_model.lower():
         from langchain_anthropic import ChatAnthropic
         anthropic_kwargs = {
@@ -51,7 +51,7 @@ def create_llm(
         if temperature is not None:
             anthropic_kwargs["temperature"] = temperature
         return ChatAnthropic(**anthropic_kwargs)
-        
+
     # 动态路由：如果是 gemini 等通过 12AI 提供的模型，切换 provider
     if "gemini" in resolved_model.lower():
         api_key = settings.twelveai_api_key

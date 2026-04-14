@@ -19,10 +19,10 @@ def _build_fulltext_chain():
 
 
 async def generate_fulltext(
-    outline: str,
-    target_word_count: int = 8000,
-    references: str = "",
-    codetype: str = "否",
+        outline: str,
+        target_word_count: int = 8000,
+        references: str = "",
+        codetype: str = "否",
 ) -> str:
     """阶段②：根据大纲生成论文正文（含图片占位符）。"""
 

@@ -20,6 +20,7 @@ def _build_outline_chain():
     )
     return THESIS_OUTLINE_PROMPT | llm | StrOutputParser()
 
+
 def _strip_json_fence(text: str) -> str:
     cleaned = text.strip()
     cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned, flags=re.IGNORECASE)
@@ -34,10 +35,10 @@ def _parse_and_validate_outline(raw: str) -> dict:
 
 
 def _build_outline_instructions(
-    codetype: str,
-    language: str,
-    three_level: bool,
-    aboutmsg: str,
+        codetype: str,
+        language: str,
+        three_level: bool,
+        aboutmsg: str,
 ) -> dict[str, str]:
     return {
         "codetype_instruction": (
@@ -64,12 +65,12 @@ def _build_outline_instructions(
 
 
 async def generate_outline(
-    title: str,
-    target_word_count: int = 8000,
-    codetype: str = "否",
-    language: str = "否",
-    three_level: bool = False,
-    aboutmsg: str = "",
+        title: str,
+        target_word_count: int = 8000,
+        codetype: str = "否",
+        language: str = "否",
+        three_level: bool = False,
+        aboutmsg: str = "",
 ) -> dict:
     """阶段①：根据论文标题生成结构化 JSON 大纲。"""
 

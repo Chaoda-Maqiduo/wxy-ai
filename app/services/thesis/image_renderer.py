@@ -83,7 +83,6 @@ def _resolve_chart_font() -> tuple[str, str | None]:
     return "DejaVu Sans", None
 
 
-
 def _auto_crop_whitespace_fast(image_path: str, padding: int = 20) -> str:
     """快速裁剪图片四周的纯白留白区域（基于 numpy 加速）。"""
     try:
@@ -125,7 +124,7 @@ async def render_mermaid(mermaid_code: str, output_path: str) -> str:
     """将 Mermaid 代码渲染为 PNG。"""
 
     with tempfile.NamedTemporaryFile(
-        mode="w", encoding="utf-8", suffix=".mmd", delete=False
+            mode="w", encoding="utf-8", suffix=".mmd", delete=False
     ) as temp_file:
         temp_file.write(mermaid_code)
         mmd_path = temp_file.name
@@ -137,7 +136,7 @@ async def render_mermaid(mermaid_code: str, output_path: str) -> str:
         puppeteer_config["executablePath"] = executable_path
 
     with tempfile.NamedTemporaryFile(
-        mode="w", encoding="utf-8", suffix=".json", delete=False
+            mode="w", encoding="utf-8", suffix=".json", delete=False
     ) as temp_config:
         json.dump(puppeteer_config, temp_config, ensure_ascii=False)
         pptr_config_path = temp_config.name
@@ -290,11 +289,11 @@ class ImageGenerator(ABC):
 
     @abstractmethod
     async def generate(
-        self,
-        description: str,
-        style: str,
-        aspect_ratio: str,
-        output_path: str,
+            self,
+            description: str,
+            style: str,
+            aspect_ratio: str,
+            output_path: str,
     ) -> str:
         """生成图片并保存到 output_path，返回实际路径。"""
 
@@ -303,11 +302,11 @@ class PlaceholderImageGenerator(ImageGenerator):
     """占位实现：生成包含描述文字的本地占位图。"""
 
     async def generate(
-        self,
-        description: str,
-        style: str,
-        aspect_ratio: str,
-        output_path: str,
+            self,
+            description: str,
+            style: str,
+            aspect_ratio: str,
+            output_path: str,
     ) -> str:
         ratios = {
             "16:9": (1024, 576),
@@ -349,11 +348,11 @@ class TwelveAIGenerator(ImageGenerator):
         self.model = model
 
     async def generate(
-        self,
-        description: str,
-        style: str,
-        aspect_ratio: str,
-        output_path: str,
+            self,
+            description: str,
+            style: str,
+            aspect_ratio: str,
+            output_path: str,
     ) -> str:
         style_map = {
             "concept_illustration": "clean flat design, minimalist concept illustration, soft muted colors, white background",
@@ -424,9 +423,9 @@ class TwelveAIGenerator(ImageGenerator):
 
 
 async def render_all_figures(
-    placeholders: list[dict],
-    image_generator: ImageGenerator,
-    output_dir: str = "app/output/images",
+        placeholders: list[dict],
+        image_generator: ImageGenerator,
+        output_dir: str = "app/output/images",
 ) -> dict[int, str | None]:
     """并发渲染所有占位符，返回 {index: path_or_none}。"""
 

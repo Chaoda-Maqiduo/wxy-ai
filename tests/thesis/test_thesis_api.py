@@ -48,10 +48,10 @@ def test_outline_title_too_short_returns_422(client: TestClient) -> None:
 
 def test_generate_and_status_flow(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
     async def fake_run_generate(
-        task_id: str,
-        title: str,
-        outline: str,
-        cover_kwargs: dict | None = None,
+            task_id: str,
+            title: str,
+            outline: str,
+            cover_kwargs: dict | None = None,
     ) -> None:
         assert task_id
         assert title

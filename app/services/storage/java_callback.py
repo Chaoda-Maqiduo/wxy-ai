@@ -32,7 +32,7 @@ async def notify_java(task_id: str, file_key: str, status: str, error_msg: str =
                 logger.info("回调 Java 成功: task_id=%s, status=%s", task_id, status)
                 return
         except Exception as exc:  # noqa: BLE001
-            delay = 2**attempt
+            delay = 2 ** attempt
             logger.warning(
                 "回调 Java 失败: task_id=%s, status=%s, attempt=%d/3, err=%s",
                 task_id,

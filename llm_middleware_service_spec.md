@@ -13,17 +13,17 @@
 
 ## 二、技术栈
 
-| 组件 | 选型 |
-|------|------|
-| 语言 | Python 3.11+ |
-| Web 框架 | FastAPI |
-| ASGI 服务器 | Uvicorn |
-| LLM 框架 | LangChain |
-| 大模型 API | DeepSeek（兼容 OpenAI 接口规范） |
-| 包管理 | uv |
-| 环境管理 | uv venv（虚拟环境） |
-| 数据校验 | Pydantic v2 |
-| 配置管理 | python-dotenv |
+| 组件       | 选型                       |
+|----------|--------------------------|
+| 语言       | Python 3.11+             |
+| Web 框架   | FastAPI                  |
+| ASGI 服务器 | Uvicorn                  |
+| LLM 框架   | LangChain                |
+| 大模型 API  | DeepSeek（兼容 OpenAI 接口规范） |
+| 包管理      | uv                       |
+| 环境管理     | uv venv（虚拟环境）            |
+| 数据校验     | Pydantic v2              |
+| 配置管理     | python-dotenv            |
 
 ---
 
@@ -262,15 +262,15 @@ uvicorn app.main:app --host 0.0.0.0 --port 10461 --reload
 
 本项目结构设计支持以下方向的平滑扩展，无需重构：
 
-| 功能 | 扩展位置 |
-|------|----------|
-| 新增业务接口（如摘要、翻译、问答） | 在 `app/api/v1/` 和 `app/services/` 新增文件 |
-| 上下文/多轮对话管理 | 在 `app/llm/` 新增 memory 模块，使用 LangChain Memory |
-| 提示词版本管理 | 在 `app/llm/prompts/` 按功能维护多个模板 |
-| 切换或新增模型（如 GPT-4、Claude） | 修改 `app/llm/client.py`，支持多模型路由 |
-| 请求日志与追踪 | 在 `app/main.py` 添加 FastAPI 中间件 |
-| 限流与鉴权 | 在 `app/api/` 添加依赖注入（FastAPI Depends） |
-| 数据库持久化（保存对话历史） | 新增 `app/db/` 模块 |
+| 功能                      | 扩展位置                                          |
+|-------------------------|-----------------------------------------------|
+| 新增业务接口（如摘要、翻译、问答）       | 在 `app/api/v1/` 和 `app/services/` 新增文件        |
+| 上下文/多轮对话管理              | 在 `app/llm/` 新增 memory 模块，使用 LangChain Memory |
+| 提示词版本管理                 | 在 `app/llm/prompts/` 按功能维护多个模板                |
+| 切换或新增模型（如 GPT-4、Claude） | 修改 `app/llm/client.py`，支持多模型路由                |
+| 请求日志与追踪                 | 在 `app/main.py` 添加 FastAPI 中间件                |
+| 限流与鉴权                   | 在 `app/api/` 添加依赖注入（FastAPI Depends）          |
+| 数据库持久化（保存对话历史）          | 新增 `app/db/` 模块                               |
 
 ---
 

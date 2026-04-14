@@ -1,4 +1,6 @@
-import requests, time, sys
+import requests
+import sys
+import time
 
 BASE_URL = "http://localhost:10461/api/v1/thesis"
 title = "乡村振兴战略背景下农村电商发展现状与对策研究"
@@ -34,4 +36,5 @@ for _ in range(300):
         print(f"DONE! chars={d.get('fulltext_char_count')}, figures={d.get('figure_count')}, docx={d.get('docx_path')}")
         sys.exit(0)
     elif status == "failed":
-        print("FAILED:", d.get("message")); sys.exit(1)
+        print("FAILED:", d.get("message"));
+        sys.exit(1)

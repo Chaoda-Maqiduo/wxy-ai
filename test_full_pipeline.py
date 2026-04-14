@@ -1,4 +1,6 @@
-import requests, time, sys
+import requests
+import sys
+import time
 
 BASE = "http://localhost:10461/api/v1/thesis"
 TITLE = "区块链技术在供应链金融中的应用模式与风险控制研究"
@@ -36,12 +38,15 @@ for i in range(300):
     s = d.get("status")
     print(f"  [{elapsed:>3}s] {s}")
     if s == "completed":
-        result = d; break
+        result = d;
+        break
     elif s == "failed":
-        print(f"  ❌ 失败: {d.get('message')}"); sys.exit(1)
+        print(f"  ❌ 失败: {d.get('message')}");
+        sys.exit(1)
 
 if not result:
-    print("  ❌ 超时"); sys.exit(1)
+    print("  ❌ 超时");
+    sys.exit(1)
 
 # 4. 汇总
 chars = result.get("fulltext_char_count", 0)
@@ -52,7 +57,7 @@ print(f"  目标字数:   {TARGET}")
 print(f"  实际字符数: {chars}")
 print(f"  图表数量:   {figs}")
 print(f"  文档路径:   {docx}")
-print(f"  总耗时:     {int(time.time()-start)}s")
+print(f"  总耗时:     {int(time.time() - start)}s")
 
 # 5. 验证路径穿越防御
 print(f"\n[BONUS] 路径穿越防御测试...")

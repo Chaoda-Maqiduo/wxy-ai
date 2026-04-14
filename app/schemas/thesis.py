@@ -208,7 +208,7 @@ def extract_figure_placeholders(text: str) -> list[dict[str, Any]]:
 
 
 def split_by_render_method(
-    placeholders: list[dict[str, Any]],
+        placeholders: list[dict[str, Any]],
 ) -> tuple[
     list[dict[str, Any]],
     list[dict[str, Any]],

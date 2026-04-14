@@ -47,20 +47,20 @@ class ThesisResult:
 
 
 async def generate_thesis_document(
-    task_id: str,
-    title: str,
-    outline: str,
-    target_word_count: int = 8000,
-    codetype: str = "否",
-    wxquote: str = "标注",
-    language: str = "否",
-    wxnum: int = 25,
-    author: str = "作者姓名",
-    advisor: str = "指导教师",
-    degree_type: str = "学士",
-    major: str = "专业名称",
-    school: str = "XX大学XX学院",
-    year_month: str = "",
+        task_id: str,
+        title: str,
+        outline: str,
+        target_word_count: int = 8000,
+        codetype: str = "否",
+        wxquote: str = "标注",
+        language: str = "否",
+        wxnum: int = 25,
+        author: str = "作者姓名",
+        advisor: str = "指导教师",
+        degree_type: str = "学士",
+        major: str = "专业名称",
+        school: str = "XX大学XX学院",
+        year_month: str = "",
 ) -> ThesisResult:
     """
     论文生成主流程（阶段② + ②.5 + ②.7 + ③）。
@@ -114,7 +114,7 @@ async def generate_thesis_document(
 
     from app.config import get_settings
     settings = get_settings()
-    
+
     # if settings.openrouter_api_key:
     #     image_generator = OpenRouterImageGenerator(
     #         api_key=settings.openrouter_api_key,
@@ -128,7 +128,7 @@ async def generate_thesis_document(
         )
     else:
         image_generator = PlaceholderImageGenerator()
-        
+
     image_paths = await render_all_figures(
         placeholders=placeholders,
         image_generator=image_generator,

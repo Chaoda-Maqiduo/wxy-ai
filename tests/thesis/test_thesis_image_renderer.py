@@ -80,7 +80,7 @@ def clear_chart_font_cache() -> None:
 
 
 def test_resolve_chart_font_prefers_installed_chinese_font(
-    monkeypatch: pytest.MonkeyPatch,
+        monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
         image_renderer,
@@ -99,7 +99,7 @@ def test_resolve_chart_font_prefers_installed_chinese_font(
 
 
 def test_resolve_chart_font_falls_back_to_dejavu(
-    monkeypatch: pytest.MonkeyPatch,
+        monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
         image_renderer,
@@ -115,7 +115,7 @@ def test_resolve_chart_font_falls_back_to_dejavu(
 
 
 def test_render_chart_uses_resolved_font_without_missing_glyph_warning(
-    tmp_path: Path,
+        tmp_path: Path,
 ) -> None:
     output = tmp_path / "line_cn.png"
     font_name, font_path = _resolve_chart_font()

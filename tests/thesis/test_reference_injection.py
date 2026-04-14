@@ -17,9 +17,9 @@ def test_generate_thesis_document_injects_references_before_fulltext(monkeypatch
         return references_text
 
     async def fake_generate_fulltext(
-        outline: str,
-        target_word_count: int = 8000,
-        references: str = "",
+            outline: str,
+            target_word_count: int = 8000,
+            references: str = "",
     ) -> str:
         calls.append(("fulltext", references, target_word_count))
         return "# 第一章 绪论\n系统设计已有较多研究基础[1]。\n"
@@ -80,9 +80,9 @@ def test_generate_thesis_document_degrades_when_references_fail(monkeypatch) -> 
         raise RuntimeError("serpapi down")
 
     async def fake_generate_fulltext(
-        outline: str,
-        target_word_count: int = 8000,
-        references: str = "",
+            outline: str,
+            target_word_count: int = 8000,
+            references: str = "",
     ) -> str:
         calls.append(("fulltext", references))
         return "# 第一章 绪论\n正文。\n"

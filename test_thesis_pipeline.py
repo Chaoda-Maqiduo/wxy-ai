@@ -1,7 +1,7 @@
-import requests
-import json
-import time
 import sys
+import time
+
+import requests
 
 BASE_URL = "http://localhost:10461/api/v1/thesis"
 
@@ -37,14 +37,14 @@ task_id = res2.json().get("task_id")
 print("Task submitted, task_id:", task_id)
 
 print("3. Polling status...")
-for i in range(300): # max 50 mins
+for i in range(300):  # max 50 mins
     time.sleep(10)
     try:
         res3 = requests.get(f"{BASE_URL}/status/{task_id}")
         if res3.status_code == 200:
             status_data = res3.json()
             status = status_data.get("status")
-            print(f"[{i*10}s] Status: {status}")
+            print(f"[{i * 10}s] Status: {status}")
             if status == "success":
                 print("Generation complete! DOCX saved at:", status_data.get("docx_path"))
                 sys.exit(0)
@@ -55,4 +55,3 @@ for i in range(300): # max 50 mins
             print("Poll error:", res3.text)
     except Exception as e:
         print("Poll exception:", e)
-

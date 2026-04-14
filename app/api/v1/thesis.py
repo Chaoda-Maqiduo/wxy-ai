@@ -66,14 +66,14 @@ def _result_value(result: Any, key: str, default: Any) -> Any:
 
 
 async def _run_generate(
-    task_id: str,
-    title: str,
-    outline: str,
-    cover_kwargs: dict[str, Any] | None = None,
-    codetype: str = "否",
-    wxquote: str = "标注",
-    language: str = "否",
-    wxnum: int = 25,
+        task_id: str,
+        title: str,
+        outline: str,
+        cover_kwargs: dict[str, Any] | None = None,
+        codetype: str = "否",
+        wxquote: str = "标注",
+        language: str = "否",
+        wxnum: int = 25,
 ) -> None:
     """后台执行论文生成流程并更新任务状态。"""
 
@@ -156,8 +156,8 @@ async def create_outline(req: OutlineRequest) -> OutlineResponse:
 
 @router.post("/generate", response_model=GenerateSubmitResponse)
 async def generate_document(
-    req: GenerateRequest,
-    background_tasks: BackgroundTasks,
+        req: GenerateRequest,
+        background_tasks: BackgroundTasks,
 ) -> GenerateSubmitResponse:
     """提交论文生成任务并立即返回 task_id。"""
 
@@ -188,7 +188,7 @@ async def generate_document(
 
 @router.get("/status/{task_id}", response_model=TaskStatusResponse)
 async def get_task_status(
-    task_id: str = FastApiPath(..., pattern=r"^[a-zA-Z0-9_-]+$"),
+        task_id: str = FastApiPath(..., pattern=r"^[a-zA-Z0-9_-]+$"),
 ) -> TaskStatusResponse:
     """查询任务状态。"""
 
@@ -200,7 +200,7 @@ async def get_task_status(
 
 @router.get("/download/{task_id}")
 async def download_document(
-    task_id: str = FastApiPath(..., pattern=r"^[a-zA-Z0-9_-]+$"),
+        task_id: str = FastApiPath(..., pattern=r"^[a-zA-Z0-9_-]+$"),
 ) -> FileResponse:
     """下载生成的 Word 文档。"""
 
