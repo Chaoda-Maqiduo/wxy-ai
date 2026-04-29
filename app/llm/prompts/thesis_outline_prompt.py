@@ -24,18 +24,18 @@ THESIS_OUTLINE_PROMPT = ChatPromptTemplate.from_messages(
                 "6. 关键词使用英文逗号分隔\n\n"
                 "输出格式：严格输出 JSON，不要包含 Markdown 代码块围栏。\n"
                 "格式如下：\n"
-                "{\n"
+                "{{\n"
                 '  "outline": [\n'
-                "    {\n"
+                "    {{\n"
                 '      "chapter": "章节标题",\n'
                 '      "sections": [\n'
-                '        {"name": "小节标题", "abstract": "一句话说明该小节核心内容"}\n'
+                '        {{"name": "小节标题", "abstract": "一句话说明该小节核心内容"}}\n'
                 "      ]\n"
-                "    }\n"
+                "    }}\n"
                 "  ],\n"
                 '  "abstract": "论文摘要（200字左右）",\n'
                 '  "keywords": "关键词1,关键词2,关键词3"\n'
-                "}"
+                "}}"
             ),
         ),
         (

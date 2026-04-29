@@ -31,12 +31,23 @@ class OutlineSection(BaseModel):
     name: str
     abstract: str
 
+    @model_validator(mode="after")
+    def normalize_name(self) -> "OutlineSection":
+        self.name = re.sub(r"^\s*\d+(?:\.\d+)*[\.\s、-]*", "", self.name).strip()
+        return self
+
 
 class OutlineChapter(BaseModel):
     """论文大纲章节。"""
 
     chapter: str
     sections: list[OutlineSection]
+
+    @model_validator(mode="after")
+    def normalize_chapter(self) -> "OutlineChapter":
+        self.chapter = re.sub(r"^\s*第[一二三四五六七八九十百零\d]+章[\s、:：.-]*", "", self.chapter).strip()
+        self.chapter = re.sub(r"^\s*\d+[\.\s、-]*", "", self.chapter).strip()
+        return self
 
 
 class OutlinePayload(BaseModel):
