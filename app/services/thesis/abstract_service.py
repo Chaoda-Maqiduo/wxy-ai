@@ -12,16 +12,20 @@ from app.llm.prompts.thesis_abstract_prompt import (
 logger = logging.getLogger(__name__)
 
 
-def _parse_body_and_keywords(raw: str, kw_prefix: str) -> tuple[str, str]:
+def _parse_body_and_keywords(raw: str, kw_prefixes: tuple[str, ...]) -> tuple[str, str]:
     """从模型输出中拆分正文与关键词。"""
     lines = raw.strip().splitlines()
     keywords = ""
     body_lines: list[str] = []
     for line in lines:
         stripped = line.strip()
-        if stripped.startswith(kw_prefix):
-            keywords = stripped[len(kw_prefix):].strip()
-        else:
+        matched = False
+        for prefix in kw_prefixes:
+            if stripped.startswith(prefix):
+                keywords = stripped[len(prefix):].strip()
+                matched = True
+                break
+        if not matched:
             body_lines.append(line)
     return "\n".join(body_lines).strip(), keywords
 
@@ -42,8 +46,12 @@ def _parse_combined_abstract(raw: str) -> dict[str, str]:
         # 兜底：没有英文分隔符时，整段视为中文摘要
         zh_section = raw.replace(zh_marker, "").strip()
 
-    abstract_zh, keywords_zh = _parse_body_and_keywords(zh_section, "关键词：")
-    abstract_en, keywords_en = _parse_body_and_keywords(en_section, "Keywords:")
+    abstract_zh, keywords_zh = _parse_body_and_keywords(
+        zh_section, ("【关键词】", "关键词：", "关键词:")
+    )
+    abstract_en, keywords_en = _parse_body_and_keywords(
+        en_section, ("【KEY WORDS】", "Keywords:", "KEY WORDS:")
+    )
 
     return {
         "abstract_zh": abstract_zh,

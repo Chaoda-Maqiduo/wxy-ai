@@ -5,6 +5,7 @@ from pathlib import Path
 from PIL import Image
 from docx import Document
 from docx.enum.section import WD_SECTION
+from docx.enum.table import WD_TABLE_ALIGNMENT
 from docx.enum.text import (
     WD_ALIGN_PARAGRAPH,
     WD_LINE_SPACING,
@@ -56,13 +57,16 @@ def _apply_fixed_line_spacing(paragraph_format, pt: float = 22) -> None:
     p_pr.append(spacing)
 
 
-def _restart_page_numbering(section, start: int = 1) -> None:
-    """为当前 section 重置页码起始值。"""
+def _set_page_numbering(section, start: int | None = None, number_format: str | None = None) -> None:
+    """设置当前 section 页码格式；start 为 None 时自然延续。"""
     sect_pr = section._sectPr
     for old in sect_pr.findall(qn("w:pgNumType")):
         sect_pr.remove(old)
     pg_num = OxmlElement("w:pgNumType")
-    pg_num.set(qn("w:start"), str(start))
+    if number_format:
+        pg_num.set(qn("w:fmt"), number_format)
+    if start is not None:
+        pg_num.set(qn("w:start"), str(start))
     sect_pr.append(pg_num)
 
 
@@ -72,6 +76,7 @@ def _restart_page_numbering(section, start: int = 1) -> None:
 def _pre_scan_headings(
         full_text: str,
         title: str = "",
+        include_back_matter: bool = True,
 ) -> list[dict[str, object]]:
     """Pre-scan body Markdown to extract level 1-3 headings for the TOC page.
 
@@ -128,6 +133,18 @@ def _pre_scan_headings(
                 "bookmark_id": idx + 100,
             }
         )
+
+    if include_back_matter:
+        for text in ("参考文献", "致谢"):
+            idx = len(entries)
+            entries.append(
+                {
+                    "text": text,
+                    "level": 1,
+                    "bookmark": f"_toc_{idx}",
+                    "bookmark_id": idx + 100,
+                }
+            )
 
     return entries
 
@@ -215,30 +232,20 @@ def _copy_page_layout_from_first(document: Document, section) -> None:
     section.bottom_margin = first.bottom_margin
     section.left_margin = first.left_margin
     section.right_margin = first.right_margin
+    section.header_distance = first.header_distance
+    section.footer_distance = first.footer_distance
 
 
-def _make_blank_section(document: Document):
+def _make_blank_section(document: Document, section_type=WD_SECTION.NEW_PAGE):
     """新增一个空白 section，不带页眉页脚。"""
-    section = document.add_section(WD_SECTION.NEW_PAGE)
+    section = document.add_section(section_type)
     _copy_page_layout_from_first(document, section)
     _clear_header_footer(section)
     return section
 
 
-def _setup_body_section(document: Document, title: str) -> None:
-    """配置正文 section 的页眉和页脚页码。"""
-    section = document.sections[-1]
-    _copy_page_layout_from_first(document, section)
-    _clear_header_footer(section)
-    _restart_page_numbering(section, start=1)
-
-    header = section.header
-    p_header = header.paragraphs[0] if header.paragraphs else header.add_paragraph()
-    p_header.clear()
-    p_header.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    run_h = p_header.add_run(title)
-    _set_run_font(run_h, size_pt=10)
-
+def _add_page_number_footer(section, cached_text: str = "1") -> None:
+    """在页脚居中加入 PAGE 字段。"""
     footer = section.footer
     p_footer = footer.paragraphs[0] if footer.paragraphs else footer.add_paragraph()
     p_footer.clear()
@@ -260,17 +267,40 @@ def _setup_body_section(document: Document, title: str) -> None:
     fld_sep.set(qn("w:fldCharType"), "separate")
     r_element.append(fld_sep)
 
-    num_run = p_footer.add_run("1")
+    num_run = p_footer.add_run(cached_text)
     _set_run_font(
         num_run,
         zh_font="Times New Roman",
         en_font="Times New Roman",
-        size_pt=10,
+        size_pt=10.5,
     )
 
     fld_end = OxmlElement("w:fldChar")
     fld_end.set(qn("w:fldCharType"), "end")
     p_footer.add_run()._element.append(fld_end)
+
+
+def _setup_front_matter_section(section, start: int | None = None) -> None:
+    """配置摘要/目录 section：罗马页码，start=None 时自然延续。"""
+    _clear_header_footer(section)
+    _set_page_numbering(section, start=start, number_format="upperRoman")
+    _add_page_number_footer(section, cached_text="Ⅰ" if start == 1 else "")
+
+
+def _setup_body_section(document: Document, title: str) -> None:
+    """配置正文 section 的页眉和页脚页码。"""
+    section = document.sections[-1]
+    _copy_page_layout_from_first(document, section)
+    _clear_header_footer(section)
+    _set_page_numbering(section, start=1)
+
+    header = section.header
+    p_header = header.paragraphs[0] if header.paragraphs else header.add_paragraph()
+    p_header.clear()
+    p_header.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    run_h = p_header.add_run(title)
+    _set_run_font(run_h, zh_font="Times New Roman", en_font="Times New Roman", size_pt=10.5)
+    _add_page_number_footer(section, cached_text="1")
 
 
 # ---------- Markdown 表格解析工具 ----------
@@ -328,12 +358,13 @@ def _add_markdown_text_to_paragraph(
 
 
 def _add_table(document: Document, rows: list[list[str]]) -> None:
-    """将二维数据写入 Word 表格。"""
+    """将二维数据写入 Word 三线表；第一行视为表头。"""
     if not rows:
         return
 
     num_cols = max(len(r) for r in rows)
-    table = document.add_table(rows=len(rows), cols=num_cols, style="Table Grid")
+    table = document.add_table(rows=len(rows), cols=num_cols)
+    table.alignment = WD_TABLE_ALIGNMENT.CENTER
 
     for i, row_data in enumerate(rows):
         for j, cell_text in enumerate(row_data):
@@ -342,12 +373,47 @@ def _add_table(document: Document, rows: list[list[str]]) -> None:
             cell = table.rows[i].cells[j]
             paragraph = cell.paragraphs[0] if cell.paragraphs else cell.add_paragraph()
             paragraph.paragraph_format.first_line_indent = Pt(0)
+            paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
             _add_markdown_text_to_paragraph(
                 paragraph,
                 cell_text,
                 is_header=(i == 0),
                 is_table=True,
             )
+            for run in paragraph.runs:
+                _set_run_font(run, size_pt=10.5, bold=True if i == 0 else None)
+
+    _apply_three_line_table(table)
+
+
+def _apply_three_line_table(table) -> None:
+    """三线表：首行顶线/表头底线、末行底线，左右开放。"""
+    row_count = len(table.rows)
+    for row_idx, row in enumerate(table.rows):
+        for cell in row.cells:
+            tc_pr = cell._tc.get_or_add_tcPr()
+            for old in tc_pr.findall(qn("w:tcBorders")):
+                tc_pr.remove(old)
+
+            borders = OxmlElement("w:tcBorders")
+            bottom_sz = "12" if row_idx == row_count - 1 else ("4" if row_idx == 0 else "nil")
+            for name, sz in (
+                    ("top", "12" if row_idx == 0 else "nil"),
+                    ("bottom", bottom_sz),
+                    ("left", "nil"),
+                    ("right", "nil"),
+                    ("insideH", "nil"),
+                    ("insideV", "nil"),
+            ):
+                border = OxmlElement(f"w:{name}")
+                if sz == "nil":
+                    border.set(qn("w:val"), "nil")
+                else:
+                    border.set(qn("w:val"), "single")
+                    border.set(qn("w:sz"), sz)
+                    border.set(qn("w:color"), "000000")
+                borders.append(border)
+            tc_pr.append(borders)
 
 
 # ---------- 文档样式初始化 ----------
@@ -360,7 +426,7 @@ def _init_styles(document: Document) -> None:
     normal_style.font.size = Pt(12)
     normal_style.paragraph_format.first_line_indent = Cm(0.74)
     normal_style.paragraph_format.space_before = Pt(0)
-    normal_style.paragraph_format.space_after = Pt(6)
+    normal_style.paragraph_format.space_after = Pt(0)
     _apply_fixed_line_spacing(normal_style.paragraph_format, pt=22)
 
     normal_r_pr = normal_style.element.get_or_add_rPr()
@@ -370,21 +436,23 @@ def _init_styles(document: Document) -> None:
     normal_r_fonts.set(qn("w:hAnsi"), "Times New Roman")
 
     heading_config = [
-        (1, 18, True),
-        (2, 16, True),
-        (3, 14, True),
+        (1, 16, True),
+        (2, 14, True),
+        (3, 12, True),
     ]
     for level, size, bold in heading_config:
         style = document.styles[f"Heading {level}"]
-        style.font.name = "黑体"
+        style.font.name = "宋体"
         style.font.size = Pt(size)
         style.font.bold = bold
         style.font.color.rgb = RGBColor(0, 0, 0)
-        style.element.get_or_add_rPr().get_or_add_rFonts().set(
-            qn("w:eastAsia"), "黑体"
-        )
-        style.paragraph_format.space_before = Pt(12)
+        r_fonts = style.element.get_or_add_rPr().get_or_add_rFonts()
+        r_fonts.set(qn("w:eastAsia"), "宋体")
+        r_fonts.set(qn("w:ascii"), "Times New Roman")
+        r_fonts.set(qn("w:hAnsi"), "Times New Roman")
+        style.paragraph_format.space_before = Pt(6)
         style.paragraph_format.space_after = Pt(6)
+        _apply_fixed_line_spacing(style.paragraph_format, pt=22)
         if level == 1:
             style.paragraph_format.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
@@ -397,10 +465,12 @@ def _setup_page(document: Document) -> None:
     section = document.sections[0]
     section.page_width = Cm(21)
     section.page_height = Cm(29.7)
-    section.top_margin = Cm(2.5)
-    section.bottom_margin = Cm(2.5)
+    section.top_margin = Cm(3)
+    section.bottom_margin = Cm(2.7)
     section.left_margin = Cm(3)
-    section.right_margin = Cm(2.5)
+    section.right_margin = Cm(3)
+    section.header_distance = Cm(2)
+    section.footer_distance = Cm(2)
     _clear_header_footer(section)
 
 
@@ -479,13 +549,138 @@ def _add_cover_page(
     document.add_page_break()
 
 
+def _apply_full_border(table) -> None:
+    """给承诺书/授权书信息表添加全边框。"""
+    for row in table.rows:
+        for cell in row.cells:
+            tc_pr = cell._tc.get_or_add_tcPr()
+            for old in tc_pr.findall(qn("w:tcBorders")):
+                tc_pr.remove(old)
+            borders = OxmlElement("w:tcBorders")
+            for name in ("top", "bottom", "left", "right", "insideH", "insideV"):
+                border = OxmlElement(f"w:{name}")
+                border.set(qn("w:val"), "single")
+                border.set(qn("w:sz"), "4")
+                border.set(qn("w:color"), "000000")
+                borders.append(border)
+            tc_pr.append(borders)
+
+
+def _add_signature_page(
+        document: Document,
+        page_title: str,
+        body_title: str,
+        body_text: str,
+        title: str,
+        author: str,
+        advisor: str,
+        major: str,
+        school: str,
+        student_id: str,
+        student_class: str,
+) -> None:
+    """添加诚信承诺书或版权使用授权书。"""
+    p_title = document.add_paragraph()
+    p_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p_title.paragraph_format.first_line_indent = Pt(0)
+    p_title.paragraph_format.space_after = Pt(18)
+    run_title = p_title.add_run(page_title)
+    _set_run_font(run_title, zh_font="黑体", size_pt=16, bold=True)
+
+    table = document.add_table(rows=4, cols=4)
+    table.alignment = WD_TABLE_ALIGNMENT.CENTER
+    rows = [
+        ("毕业论文（设计）题目", title, "学生姓名", author),
+        ("学院（系）", school, "专业", major),
+        ("班级", student_class, "学号", student_id),
+        ("指导教师", advisor, "实践导师", ""),
+    ]
+    for row_idx, values in enumerate(rows):
+        for col_idx, value in enumerate(values):
+            cell = table.cell(row_idx, col_idx)
+            cell.text = value
+            for paragraph in cell.paragraphs:
+                paragraph.paragraph_format.first_line_indent = Pt(0)
+                paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                for run in paragraph.runs:
+                    _set_run_font(run, size_pt=10.5)
+    _apply_full_border(table)
+
+    document.add_paragraph()
+    p_body_title = document.add_paragraph()
+    p_body_title.paragraph_format.first_line_indent = Pt(0)
+    run_body_title = p_body_title.add_run(body_title)
+    _set_run_font(run_body_title, zh_font="黑体", size_pt=12, bold=True)
+
+    for line in body_text.split("\n"):
+        text = line.strip()
+        if not text:
+            continue
+        paragraph = document.add_paragraph()
+        paragraph.paragraph_format.first_line_indent = Cm(0.74)
+        run = paragraph.add_run(text)
+        _set_run_font(run, size_pt=12)
+
+    p_sign = document.add_paragraph()
+    p_sign.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    p_sign.paragraph_format.first_line_indent = Pt(0)
+    run_sign = p_sign.add_run("学生签名：              年    月    日")
+    _set_run_font(run_sign, size_pt=12)
+    document.add_page_break()
+
+
+def _add_integrity_page(
+        document: Document,
+        title: str,
+        author: str,
+        advisor: str,
+        major: str,
+        school: str,
+        student_id: str,
+        student_class: str,
+) -> None:
+    body = (
+        "本人慎重承诺和声明：\n"
+        "我承诺在毕业论文（设计）活动中遵守学校有关规定，恪守学术规范，"
+        "在本人的毕业论文中未剽窃、抄袭他人的学术观点、思想和成果，"
+        "未篡改研究数据，如有违规行为发生，我愿承担一切责任，接受学校的处理。"
+    )
+    _add_signature_page(
+        document, "本科生毕业论文（设计）诚信承诺书", "诚信承诺", body,
+        title, author, advisor, major, school, student_id, student_class,
+    )
+
+
+def _add_copyright_page(
+        document: Document,
+        title: str,
+        author: str,
+        advisor: str,
+        major: str,
+        school: str,
+        student_id: str,
+        student_class: str,
+) -> None:
+    body = (
+        "本毕业论文（设计）是本人在校期间所完成学业的组成部分，是在学校教师的指导下完成的。"
+        "因此，本人特授权学校可将本毕业论文（设计）的全部或部分内容编入有关书籍、数据库保存，"
+        "可采用复制、印刷、网页制作等方式将论文（设计）文本和经过编辑、批注等处理的论文（设计）"
+        "文本提供给读者查阅、参考，可向有关学术部门和国家有关教育主管部门呈送复印件和电子文档。"
+        "本毕业论文（设计）无论做何种处理，必须尊重本人的著作权，署明本人姓名。"
+    )
+    _add_signature_page(
+        document, "本科生毕业论文（设计）版权使用授权书", "使用授权", body,
+        title, author, advisor, major, school, student_id, student_class,
+    )
+
+
 def _add_abstract_zh_page(document: Document, abstract: str, keywords: str) -> None:
     """中文摘要页。"""
     p_title = document.add_paragraph()
     p_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
     p_title.paragraph_format.first_line_indent = Pt(0)
     p_title.paragraph_format.space_after = Pt(12)
-    run_title = p_title.add_run("摘  要")
+    run_title = p_title.add_run("摘    要")
     _set_run_font(run_title, zh_font="黑体", size_pt=16, bold=True)
 
     if abstract:
@@ -494,7 +689,7 @@ def _add_abstract_zh_page(document: Document, abstract: str, keywords: str) -> N
             if not para_text:
                 continue
             paragraph = document.add_paragraph()
-            paragraph.paragraph_format.first_line_indent = Pt(24)
+            paragraph.paragraph_format.first_line_indent = Cm(0.74)
             run = paragraph.add_run(para_text)
             _set_run_font(run, size_pt=12)
 
@@ -502,8 +697,8 @@ def _add_abstract_zh_page(document: Document, abstract: str, keywords: str) -> N
         p_kw = document.add_paragraph()
         p_kw.paragraph_format.first_line_indent = Pt(0)
         p_kw.paragraph_format.space_before = Pt(12)
-        run_label = p_kw.add_run("关键词：")
-        _set_run_font(run_label, size_pt=12, bold=True)
+        run_label = p_kw.add_run("【关键词】")
+        _set_run_font(run_label, zh_font="黑体", size_pt=12, bold=True)
         run_kw = p_kw.add_run(keywords)
         _set_run_font(run_kw, size_pt=12)
 
@@ -516,7 +711,7 @@ def _add_abstract_en_page(document: Document, abstract: str, keywords: str) -> N
     p_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
     p_title.paragraph_format.first_line_indent = Pt(0)
     p_title.paragraph_format.space_after = Pt(12)
-    run_title = p_title.add_run("Abstract")
+    run_title = p_title.add_run("ABSTRACT")
     _set_run_font(
         run_title,
         zh_font="Times New Roman",
@@ -531,7 +726,7 @@ def _add_abstract_en_page(document: Document, abstract: str, keywords: str) -> N
             if not para_text:
                 continue
             paragraph = document.add_paragraph()
-            paragraph.paragraph_format.first_line_indent = Pt(0)
+            paragraph.paragraph_format.first_line_indent = Pt(48)
             paragraph.paragraph_format.space_before = Pt(6)
             run = paragraph.add_run(para_text)
             _set_run_font(
@@ -545,7 +740,7 @@ def _add_abstract_en_page(document: Document, abstract: str, keywords: str) -> N
         p_kw = document.add_paragraph()
         p_kw.paragraph_format.first_line_indent = Pt(0)
         p_kw.paragraph_format.space_before = Pt(12)
-        run_label = p_kw.add_run("Keywords: ")
+        run_label = p_kw.add_run("【KEY WORDS】")
         _set_run_font(
             run_label,
             zh_font="Times New Roman",
@@ -672,7 +867,7 @@ def _add_toc_page(
     p_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
     p_title.paragraph_format.first_line_indent = Pt(0)
     p_title.paragraph_format.space_after = Pt(12)
-    run_title = p_title.add_run("目  录")
+    run_title = p_title.add_run("目    录")
     _set_run_font(run_title, zh_font="黑体", size_pt=16, bold=True)
 
     # Per-level left indentation
@@ -714,14 +909,20 @@ def _add_toc_page(
     # Users can manually right-click the TOC -> "Update Field" if needed.
 
 
-def _add_acknowledgment_page(document: Document, acknowledgment: str) -> None:
+def _add_acknowledgment_page(
+        document: Document,
+        acknowledgment: str,
+        bookmark: dict[str, object] | None = None,
+) -> None:
     """致谢页。"""
     p_title = document.add_paragraph()
     p_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
     p_title.paragraph_format.first_line_indent = Pt(0)
     p_title.paragraph_format.space_after = Pt(12)
-    run_title = p_title.add_run("致  谢")
+    run_title = p_title.add_run("致    谢")
     _set_run_font(run_title, zh_font="黑体", size_pt=16, bold=True)
+    if bookmark:
+        _add_bookmark(p_title, str(bookmark["bookmark"]), int(bookmark["bookmark_id"]))
 
     if not acknowledgment:
         return
@@ -736,7 +937,11 @@ def _add_acknowledgment_page(document: Document, acknowledgment: str) -> None:
         _set_run_font(run, size_pt=12)
 
 
-def _add_references_page(document: Document, references: str) -> None:
+def _add_references_page(
+        document: Document,
+        references: str,
+        bookmark: dict[str, object] | None = None,
+) -> None:
     """参考文献页。"""
     p_title = document.add_paragraph()
     p_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -744,12 +949,14 @@ def _add_references_page(document: Document, references: str) -> None:
     p_title.paragraph_format.space_after = Pt(12)
     run_title = p_title.add_run("参考文献")
     _set_run_font(run_title, zh_font="黑体", size_pt=16, bold=True)
+    if bookmark:
+        _add_bookmark(p_title, str(bookmark["bookmark"]), int(bookmark["bookmark_id"]))
 
     if not references:
         paragraph = document.add_paragraph()
         paragraph.paragraph_format.first_line_indent = Pt(0)
         run = paragraph.add_run("（参考文献未生成，可能因未配置检索服务或检索结果不足）")
-        _set_run_font(run, size_pt=12)
+        _set_run_font(run, size_pt=10.5)
         return
 
     for line in references.splitlines():
@@ -757,12 +964,13 @@ def _add_references_page(document: Document, references: str) -> None:
         if not line:
             continue
         paragraph = document.add_paragraph()
-        paragraph.paragraph_format.left_indent = Cm(0.74)
-        paragraph.paragraph_format.first_line_indent = Cm(-0.74)
-        paragraph.paragraph_format.space_before = Pt(3)
-        paragraph.paragraph_format.space_after = Pt(3)
+        paragraph.paragraph_format.left_indent = Cm(0.8)
+        paragraph.paragraph_format.first_line_indent = Cm(-0.8)
+        paragraph.paragraph_format.space_before = Pt(0)
+        paragraph.paragraph_format.space_after = Pt(0)
+        _apply_fixed_line_spacing(paragraph.paragraph_format, pt=18)
         run = paragraph.add_run(line)
-        _set_run_font(run, size_pt=12)
+        _set_run_font(run, size_pt=10.5)
 
 
 def _insert_picture_with_constraints(
@@ -812,6 +1020,8 @@ def build_word_document(
         major: str = "专业名称",
         school: str = "XX大学XX学院",
         year_month: str = "",
+        student_id: str = "",
+        student_class: str = "",
         abstract_zh: str = "",
         abstract_en: str = "",
         keywords_zh: str = "",
@@ -826,7 +1036,7 @@ def build_word_document(
     _setup_page(document)
     _init_styles(document)
 
-    # Section 1：封面 + 中英文摘要
+    # Section 1：封面 + 诚信承诺书 + 版权使用授权书；不输出页码。
     _add_cover_page(
         document,
         title,
@@ -837,17 +1047,28 @@ def build_word_document(
         school,
         year_month,
     )
+    _add_integrity_page(document, title, author, advisor, major, school, student_id, student_class)
+    _add_copyright_page(document, title, author, advisor, major, school, student_id, student_class)
+
+    # Section 2：中文摘要，从罗马页码 I 开始。
+    zh_section = _make_blank_section(document, WD_SECTION.CONTINUOUS)
+    _setup_front_matter_section(zh_section, start=1)
     _add_abstract_zh_page(document, abstract_zh, keywords_zh)
+
+    # Section 3：英文摘要，罗马页码自然延续。
+    en_section = _make_blank_section(document, WD_SECTION.CONTINUOUS)
+    _setup_front_matter_section(en_section)
     _add_abstract_en_page(document, abstract_en, keywords_en)
 
     # 预扫描正文标题，生成目录条目列表
     toc_entries = _pre_scan_headings(full_text, title=title)
 
-    # Section 2：目录（可见条目 + PAGEREF 动态页码）
-    _make_blank_section(document)
+    # Section 4：目录（可见条目 + PAGEREF 动态页码），罗马页码自然延续。
+    toc_section = _make_blank_section(document)
+    _setup_front_matter_section(toc_section)
     _add_toc_page(document, toc_entries, full_text=full_text)
 
-    # Section 3：正文 + 参考文献 + 致谢
+    # Section 5：正文 + 参考文献 + 致谢，阿拉伯页码从 1 起。
     _make_blank_section(document)
     _setup_body_section(document, title)
 
@@ -880,13 +1101,13 @@ def build_word_document(
                 i = next_i
                 continue
 
-            if re.match(r"^表\d+-\d+\s", line):
+            if re.match(r"^表\s?\d+(?:[-.]\d+)?\s", line):
                 paragraph = document.add_paragraph()
                 paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
                 paragraph.paragraph_format.first_line_indent = Pt(0)
                 _add_markdown_text_to_paragraph(paragraph, line)
                 for run in paragraph.runs:
-                    _set_run_font(run, size_pt=10)
+                    _set_run_font(run, size_pt=10.5, bold=True)
                 i += 1
                 continue
 
@@ -951,21 +1172,22 @@ def build_word_document(
             _insert_picture_with_constraints(document, image_path)
 
         caption = placeholder.get("caption", f"图{placeholder_idx + 1}")
-        if not has_image:
-            caption += "（图片生成失败）"
         caption_paragraph = document.add_paragraph()
         caption_paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
         caption_paragraph.paragraph_format.first_line_indent = Pt(0)
         caption_run = caption_paragraph.add_run(caption)
-        _set_run_font(caption_run, size_pt=10)
+        _set_run_font(caption_run, size_pt=10.5, bold=True)
 
         placeholder_idx += 1
 
-    document.add_page_break()
-    _add_references_page(document, references)
+    ref_bookmark = next((entry for entry in toc_entries if entry["text"] == "参考文献"), None)
+    ack_bookmark = next((entry for entry in toc_entries if entry["text"] == "致谢"), None)
 
     document.add_page_break()
-    _add_acknowledgment_page(document, acknowledgment)
+    _add_references_page(document, references, bookmark=ref_bookmark)
+
+    document.add_page_break()
+    _add_acknowledgment_page(document, acknowledgment, bookmark=ack_bookmark)
 
     # 修正文档核心属性，让 Windows 资源管理器正确识别并显示 Word 图标。
     # python-docx 默认模板的创建时间是 2013 年，creator 是 "python-docx"，

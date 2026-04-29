@@ -2,6 +2,24 @@ import asyncio
 import logging
 from dataclasses import dataclass
 
+from app.services.thesis.abstract_service import (
+    generate_abstracts,
+    generate_acknowledgment,
+)
+from app.services.thesis.docx_builder import build_word_document
+from app.services.thesis.fulltext_service import generate_fulltext
+from app.services.thesis.image_renderer import (
+    PlaceholderImageGenerator,
+    TwelveAIGenerator,
+    render_all_figures,
+)
+from app.services.thesis.placeholder import (
+    extract_figure_placeholders,
+    split_by_render_method,
+)
+from app.services.thesis.reference_service import generate_references
+from app.services.thesis.utils import sanitize_filename
+
 logger = logging.getLogger(__name__)
 
 
@@ -44,31 +62,14 @@ async def generate_thesis_document(
         major: str = "专业名称",
         school: str = "XX大学XX学院",
         year_month: str = "",
+        student_id: str = "",
+        student_class: str = "",
 ) -> ThesisResult:
     """
     论文生成主流程（阶段② + ②.5 + ②.7 + ③）。
 
     task_id 由 API 层传入，确保状态文件和产物目录一致。
     """
-
-    from app.services.thesis.abstract_service import (
-        generate_abstracts,
-        generate_acknowledgment,
-    )
-    from app.services.thesis.docx_builder import build_word_document
-    from app.services.thesis.fulltext_service import generate_fulltext
-    from app.services.thesis.image_renderer import (
-        PlaceholderImageGenerator,
-        # OpenRouterImageGenerator,
-        TwelveAIGenerator,
-        render_all_figures,
-    )
-    from app.services.thesis.placeholder import (
-        extract_figure_placeholders,
-        split_by_render_method,
-    )
-    from app.services.thesis.reference_service import generate_references
-    from app.services.thesis.utils import sanitize_filename
 
     output_dir = f"app/output/{task_id}"
     safe_title = sanitize_filename(title)
@@ -149,6 +150,8 @@ async def generate_thesis_document(
         major=major,
         school=school,
         year_month=year_month,
+        student_id=student_id,
+        student_class=student_class,
         abstract_zh=abstract_data.get("abstract_zh", ""),
         abstract_en=abstract_data.get("abstract_en", ""),
         keywords_zh=abstract_data.get("keywords_zh", ""),
@@ -172,5 +175,13 @@ async def generate_thesis_document(
 
 __all__ = [
     "ThesisResult",
+    "build_word_document",
+    "extract_figure_placeholders",
+    "generate_abstracts",
+    "generate_acknowledgment",
+    "generate_fulltext",
+    "generate_references",
     "generate_thesis_document",
+    "render_all_figures",
+    "split_by_render_method",
 ]

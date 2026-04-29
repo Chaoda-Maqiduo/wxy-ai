@@ -23,20 +23,18 @@ from app.services.thesis.docx_builder import (
 
 # Minimal body text covering all 3 heading levels
 SAMPLE_BODY = """\
-# 第一章 绪论
+# 1 绪论
 ## 1.1 研究背景
 正文段落。
 ## 1.2 研究意义
 正文段落。
----pagebreak---
-# 第二章 相关技术
+# 2 相关技术
 ## 2.1 Spring Boot 框架概述
 ### 2.1.1 核心特性
 正文段落。
 ## 2.2 MySQL 数据库
 正文段落。
----pagebreak---
-# 第三章 系统设计
+# 3 系统设计
 ## 3.1 总体架构设计
 正文段落。
 """
@@ -188,7 +186,7 @@ class TestBlacklist:
     ])
     def test_blacklisted_headings_excluded(self, heading):
         body = f"# {heading}\n正文内容\n# 第一章 绪论\n正文\n"
-        entries = _pre_scan_headings(body, title="某论文题目")
+        entries = _pre_scan_headings(body, title="某论文题目", include_back_matter=False)
         texts = [e["text"] for e in entries]
         assert heading not in texts, f"'{heading}' should be filtered out"
 
@@ -199,8 +197,10 @@ class TestBlacklist:
         assert "我的毕业论文" not in texts
 
     def test_normal_headings_kept(self):
-        body = "# 第一章 绪论\n## 1.1 研究背景\n正文\n"
+        body = "# 1 绪论\n## 1.1 研究背景\n正文\n"
         entries = _pre_scan_headings(body, title="某论文")
-        assert len(entries) == 2
-        assert entries[0]["text"] == "第一章 绪论"
+        assert len(entries) == 4
+        assert entries[0]["text"] == "1 绪论"
         assert entries[1]["text"] == "1.1 研究背景"
+        assert entries[-2]["text"] == "参考文献"
+        assert entries[-1]["text"] == "致谢"

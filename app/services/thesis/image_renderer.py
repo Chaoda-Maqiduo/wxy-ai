@@ -7,7 +7,7 @@ from abc import ABC, abstractmethod
 from functools import lru_cache
 from pathlib import Path
 
-from PIL import Image, ImageDraw
+from PIL import Image
 
 logger = logging.getLogger(__name__)
 
@@ -299,7 +299,7 @@ class ImageGenerator(ABC):
 
 
 class PlaceholderImageGenerator(ImageGenerator):
-    """占位实现：生成包含描述文字的本地占位图。"""
+    """占位实现：生成纯白本地占位图，不暴露提示词。"""
 
     async def generate(
             self,
@@ -315,27 +315,7 @@ class PlaceholderImageGenerator(ImageGenerator):
         }
         width, height = ratios.get(aspect_ratio, (1024, 576))
 
-        # 纯白底色，避免蓝紫色方块显得突兀
         image = Image.new("RGB", (width, height), color=(255, 255, 255))
-        draw = ImageDraw.Draw(image)
-
-        # 绘制浅灰色修饰外框
-        border_color = (220, 220, 220)
-        draw.rectangle([10, 10, width - 10, height - 10], outline=border_color, width=2)
-
-        # 绘制占位提示文本
-        text_content = (
-            "[ 文科/概念图占位 ]\n\n"
-            f"建议风格: {style}\n\n"
-            f"提示词: {description[:150]}...\n\n"
-            "(后期可在 Word 中直接替换此图)"
-        )
-
-        draw.text(
-            (40, height // 3),
-            text_content,
-            fill=(150, 150, 150),
-        )
         image.save(output_path)
         return output_path
 

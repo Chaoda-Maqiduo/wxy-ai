@@ -24,6 +24,7 @@ _ENV_KEYS = (
     "TWELVEAI_API_KEY",
     "TWELVEAI_IMAGE_MODEL",
     "SERPAPI_KEY",
+    "CROSSREF_MAILTO",
     "QINIU_ACCESS_KEY",
     "QINIU_SECRET_KEY",
     "QINIU_BUCKET",
@@ -94,6 +95,8 @@ class Settings(BaseModel):
     )
     # SerpAPI key for Google Scholar reference search (optional).
     serpapi_key: str = Field(default="", validation_alias="SERPAPI_KEY")
+    # CrossRef polite pool mailto (optional).
+    crossref_mailto: str = Field(default="", validation_alias="CROSSREF_MAILTO")
     # 七牛云配置。
     qiniu_access_key: str = Field(default="", validation_alias="QINIU_ACCESS_KEY")
     qiniu_secret_key: str = Field(default="", validation_alias="QINIU_SECRET_KEY")

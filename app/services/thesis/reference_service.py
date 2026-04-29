@@ -56,7 +56,11 @@ def _title_key(item: dict) -> str:
 
 
 YEAR_PATTERN = re.compile(r"(?<!\d)((?:19|20)\d{2})(?!\d)")
-UNIVERSITY_RE = re.compile(r"大学|学院|研究院|University|Institute|College", re.IGNORECASE)
+UNIVERSITY_RE = re.compile(
+    r"(?<![\w])([^,，。；;:\-\s]{1,30}(?:大学|学院|研究院|科学院|University|Institute|College))(?!学报)",
+    re.IGNORECASE,
+)
+JOURNAL_HINT_RE = re.compile(r"学报|期刊|杂志|Journal|Review|Transactions", re.IGNORECASE)
 DOMAIN_RE = re.compile(r"^[\w.-]+\.\w{2,4}$")  # e.g. "springer.com"
 VOL_ISSUE_RE = re.compile(r"(\d+)\s*[（(](\d+)[)）]")  # 7(5) or 7（5）
 PAGES_RE = re.compile(r"(?<!\d)(\d{1,5})\s*[-–]\s*(\d{1,5})(?!\d)")  # 35-46
@@ -81,6 +85,21 @@ def _extract_year(*values: object) -> str:
         if match:
             return match.group(1)
     return ""
+
+
+def _normalize_authors(authors: str, is_zh: bool) -> str:
+    """统一参考文献作者分隔符，中文文献也使用半角逗号。"""
+    authors = re.sub(r"\s*[，,]\s*", ",", authors.strip())
+    authors = re.sub(r"\s+", " ", authors)
+    if is_zh:
+        authors = authors.replace(" ,", ",").replace(", ", ",")
+    return authors
+
+
+def _looks_like_university(text: str) -> bool:
+    if not text or JOURNAL_HINT_RE.search(text):
+        return False
+    return bool(UNIVERSITY_RE.search(text))
 
 
 def _format_one_reference(item: dict, index: int, is_zh: bool) -> str:
@@ -111,21 +130,22 @@ def _format_one_reference(item: dict, index: int, is_zh: bool) -> str:
     if cr_authors:
         if len(cr_authors) > 3:
             authors = ",".join(cr_authors[:3])
-            authors += ",等" if is_zh else ", et al."
+            authors += ",等" if is_zh else ",et al."
         else:
             authors = ",".join(cr_authors)
     elif authors_list:
-        authors = ", ".join(
+        authors = ",".join(
             author.get("name", "").strip()
             for author in authors_list[:3]
             if author.get("name")
         )
         if len(authors_list) > 3 and authors:
-            authors += ",等" if is_zh else ", et al."
+            authors += ",等" if is_zh else ",et al."
     elif summary and " - " in summary:
         authors = summary.split(" - ", 1)[0].strip()
     else:
         authors = ""
+    authors = _normalize_authors(authors, is_zh=is_zh) if authors else ""
 
     # ── 解析期刊/来源/卷期页（Scholar 降级路径） ──
     journal = ""
@@ -142,7 +162,7 @@ def _format_one_reference(item: dict, index: int, is_zh: bool) -> str:
         for seg in info_segments:
             if YEAR_PATTERN.fullmatch(seg.strip()):
                 continue
-            if UNIVERSITY_RE.search(seg):
+            if _looks_like_university(seg):
                 university = seg
                 continue
             sub_parts = [p.strip() for p in seg.split(",") if p.strip()]
@@ -182,9 +202,11 @@ def _format_one_reference(item: dict, index: int, is_zh: bool) -> str:
         final_vol_issue = ""
 
     # ── 确定文献类型 ──
-    if cr_type:
+    if final_journal:
+        doc_marker = "J"
+    elif cr_type:
         doc_marker = _TYPE_MAP.get(cr_type, "J")
-    elif university:
+    elif university and not final_journal:
         doc_marker = "D"
     else:
         doc_marker = "J"
@@ -204,6 +226,9 @@ def _format_one_reference(item: dict, index: int, is_zh: bool) -> str:
         parts.append(f"{source},{final_year}" if source else final_year)
     else:
         # 格式: 作者.标题[J].期刊,年份,卷(期):页码.
+        if not final_vol_issue and not final_page:
+            logger.debug("跳过缺卷期页码的期刊文献: %s", title[:80])
+            return ""
         detail_items: list[str] = []
         if final_journal:
             detail_items.append(final_journal)

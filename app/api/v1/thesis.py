@@ -171,6 +171,8 @@ async def generate_document(
         "major": req.major,
         "school": req.school,
         "year_month": req.year_month,
+        "student_id": req.student_id,
+        "student_class": req.student_class,
     }
     background_tasks.add_task(
         _run_generate,

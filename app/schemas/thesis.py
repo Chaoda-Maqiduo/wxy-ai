@@ -86,6 +86,8 @@ class GenerateRequest(BaseModel):
     major: str = Field(default="专业名称", description="专业")
     school: str = Field(default="XX大学XX学院", description="学院（系）")
     year_month: str = Field(default="", description="留空则自动填当前年月")
+    student_id: str = Field(default="", description="学号")
+    student_class: str = Field(default="", description="班级")
 
 
 class GenerateSubmitResponse(BaseModel):

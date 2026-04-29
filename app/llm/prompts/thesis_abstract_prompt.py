@@ -14,10 +14,10 @@ ABSTRACT_COMBINED_PROMPT = ChatPromptTemplate.from_messages(
                 "输出格式（严格遵守，不可省略分隔符）：\n"
                 "===中文摘要===\n"
                 "（中文摘要正文）\n"
-                "关键词：词1；词2；词3；词4；词5\n\n"
+                "【关键词】词1；词2；词3；词4；词5\n\n"
                 "===英文摘要===\n"
                 "（英文摘要正文，为上方中文摘要的忠实翻译）\n"
-                "Keywords: word1; word2; word3; word4; word5"
+                "【KEY WORDS】word1; word2; word3; word4; word5"
             ),
         ),
         ("human", "{text_sample}"),

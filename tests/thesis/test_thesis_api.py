@@ -25,8 +25,26 @@ def test_thesis_routes_are_registered() -> None:
 
 
 def test_outline_success(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
-    async def fake_generate_outline(title: str) -> str:
-        return f"# {title}\n\n## 一、绪论\n## 二、系统设计"
+    async def fake_generate_outline(
+            title: str,
+            target_word_count: int,
+            codetype: str,
+            language: str,
+            three_level: bool,
+            aboutmsg: str,
+    ) -> dict:
+        return {
+            "outline": [
+                {
+                    "chapter": "绪论",
+                    "sections": [
+                        {"name": "研究背景", "abstract": "介绍研究背景。"},
+                    ],
+                }
+            ],
+            "abstract": f"{title}摘要",
+            "keywords": "关键词1,关键词2",
+        }
 
     monkeypatch.setattr(thesis_api, "_load_generate_outline", lambda: fake_generate_outline)
 
@@ -38,7 +56,7 @@ def test_outline_success(client: TestClient, monkeypatch: pytest.MonkeyPatch) ->
     assert response.status_code == 200
     payload = response.json()
     assert payload["title"] == "基于大模型的论文自动生成系统设计"
-    assert payload["outline"].startswith("# 基于大模型的论文自动生成系统设计")
+    assert payload["outline"][0]["chapter"] == "绪论"
 
 
 def test_outline_title_too_short_returns_422(client: TestClient) -> None:
@@ -52,6 +70,10 @@ def test_generate_and_status_flow(client: TestClient, monkeypatch: pytest.Monkey
             title: str,
             outline: str,
             cover_kwargs: dict | None = None,
+            codetype: str = "否",
+            wxquote: str = "标注",
+            language: str = "否",
+            wxnum: int = 25,
     ) -> None:
         assert task_id
         assert title
@@ -59,6 +81,8 @@ def test_generate_and_status_flow(client: TestClient, monkeypatch: pytest.Monkey
         assert cover_kwargs is not None
         assert isinstance(cover_kwargs, dict)
         assert cover_kwargs["target_word_count"] == 12000
+        assert cover_kwargs["student_id"] == "20260001"
+        assert cover_kwargs["student_class"] == "软件工程1班"
 
     monkeypatch.setattr(thesis_api, "_run_generate", fake_run_generate)
 
@@ -66,8 +90,17 @@ def test_generate_and_status_flow(client: TestClient, monkeypatch: pytest.Monkey
         "/api/v1/thesis/generate",
         json={
             "title": "测试论文",
-            "outline": "第1章 绪论\n" + "正文" * 30,
+            "outline_json": [
+                {
+                    "chapter": "绪论",
+                    "sections": [
+                        {"name": "研究背景", "abstract": "正文" * 30},
+                    ],
+                }
+            ],
             "target_word_count": 12000,
+            "student_id": "20260001",
+            "student_class": "软件工程1班",
         },
     )
 
@@ -105,8 +138,15 @@ def test_generate_invalid_target_word_count_returns_422(client: TestClient) -> N
         "/api/v1/thesis/generate",
         json={
             "title": "测试论文",
-            "outline": "第1章 绪论\n" + "正文" * 30,
-            "target_word_count": 9000,
+            "outline_json": [
+                {
+                    "chapter": "绪论",
+                    "sections": [
+                        {"name": "研究背景", "abstract": "正文" * 30},
+                    ],
+                }
+            ],
+            "target_word_count": "invalid",
         },
     )
 

@@ -19,15 +19,11 @@ THESIS_FULLTEXT_PROMPT = ChatPromptTemplate.from_messages(
                 "## 文档结构规范\n"
                 "本文最终将转换为 Word 文档，请严格遵守以下规范：\n\n"
                 "### 标题编号\n"
-                "- 一级标题格式：# 第一章 绪论、# 第二章 相关技术概述\n"
+                "- 一级标题格式：# 1 绪论、# 2 相关技术概述\n"
                 "- 二级标题格式：## 2.1 系统需求分析\n"
                 "- 三级标题格式：### 2.1.1 功能需求\n"
-                "- 标题不超过三级，保持层级清晰一致\n\n"
-                "### 章节分页\n"
-                "- 除第一章外，每个一级标题前单独一行写 ---pagebreak--- 表示分页\n"
-                "- ---pagebreak--- 必须完整、精确、独占一行，前后不能多字、少字、拆开、换写或变体\n"
-                "- 绝对禁止输出以下错误形式：---、pagebreak---、--pagebreak--、`---pagebreak---`\n"
-                "- 除分页标记外，不要在正文中输出任何只含破折号的分隔线\n\n"
+                "- 标题不超过三级，保持层级清晰一致\n"
+                "- 一级标题前不要加“第”和“章”字，不要输出章节分页标记\n\n"
                 "## 输出格式\n"
                 "- 以纯文本输出，使用上述标题编号规范\n"
                 "- 每章内容充实，包含理论分析、技术细节或实际操作描述\n"
@@ -36,7 +32,7 @@ THESIS_FULLTEXT_PROMPT = ChatPromptTemplate.from_messages(
                 "- 每个一级章节的篇幅应大致均匀，单章不超过总字数的 30%\n"
                 "- 宁可精炼表达也不要注水凑字数；同样也不要过度展开导致超字数\n"
                 "- 需要展示结构化数据时使用 Markdown 表格（如需求列表、技术对比、测试结果等）\n"
-                "- 每个表格上方写表号和标题，格式：表X-X 表格标题（X为章号-序号）\n"
+                "- 每个表格上方写表号和标题，格式：表 X.Y 表格标题（X为章号，Y为本章序号）\n"
                 "- 全文建议包含 3-6 个表格\n"
                 "- 列表使用标准 Markdown 语法（- 或 1.），禁止使用 \u2022 \u203b \u2192 等 Unicode 符号\n"
                 "- 禁止使用 Markdown 加粗（**）和斜体（*），用自然语言表达强调\n\n"
@@ -57,7 +53,7 @@ THESIS_FULLTEXT_PROMPT = ChatPromptTemplate.from_messages(
                 "占位符格式示例：\n"
                 "<<FIGURE>>\n"
                 "{{\n"
-                '  "caption": "\u56feX-X \u6b64\u56fe\u7684\u6807\u9898",\n'
+                '  "caption": "\u56fe X.Y \u6b64\u56fe\u7684\u6807\u9898",\n'
                 '  "render_method": "mermaid",\n'
                 '  "mermaid_code": "graph TD\\n    A[模块A] --> B[模块B]"\n'
                 "}}\n"
@@ -70,7 +66,7 @@ THESIS_FULLTEXT_PROMPT = ChatPromptTemplate.from_messages(
                 "占位符格式示例：\n"
                 "<<FIGURE>>\n"
                 "{{\n"
-                '  "caption": "\u56feX-X \u6b64\u56fe\u7684\u6807\u9898",\n'
+                '  "caption": "\u56fe X.Y \u6b64\u56fe\u7684\u6807\u9898",\n'
                 '  "render_method": "chart",\n'
                 '  "chart_type": "line",\n'
                 '  "title": "\u7cfb\u7edf\u7ae0\u8282\u751f\u6210\u63a5\u53e35\u5206\u949f\u538b\u529b\u6d4b\u8bd5\u54cd\u5e94\u65f6\u95f4\u53d8\u5316\u8d8b\u52bf",\n'
@@ -89,7 +85,7 @@ THESIS_FULLTEXT_PROMPT = ChatPromptTemplate.from_messages(
                 "占位符格式示例：\n"
                 "<<FIGURE>>\n"
                 "{{\n"
-                '  "caption": "\u56feX-X \u6b64\u56fe\u7684\u6807\u9898",\n'
+                '  "caption": "\u56fe X.Y \u6b64\u56fe\u7684\u6807\u9898",\n'
                 '  "render_method": "ai_image",\n'
                 '  "description": "\u5bf9\u56fe\u7247\u5185\u5bb9\u7684\u8be6\u7ec6\u63cf\u8ff0\uff0c\u5177\u4f53\u5230\u5143\u7d20\u3001\u5e03\u5c40\u3001\u989c\u8272\u98ce\u683c\u3001\u6570\u636e\u6807\u6ce8\u7b49",\n'
                 '  "style": "concept_illustration",\n'
@@ -109,7 +105,7 @@ THESIS_FULLTEXT_PROMPT = ChatPromptTemplate.from_messages(
                 "- 适当使用\u201c本文\u201d\u201c笔者\u201d等学术用语\n"
                 "- 段落间逻辑连贯，设置过渡句\n"
                 "- 技术描述准确\n"
-                "- 图表编号与章节对应（第三章的图为图3-1、图3-2，表为表3-1）\n"
+                "- 图表编号与章节对应（第三章的图为图 3.1、图 3.2，表为表 3.1）\n"
                 "- 每个图表在正文中必须先引用再展示\n"
                 "- 关键术语首次出现时附英文（如：模型-视图-控制器（MVC））\n"
                 "- 段落首行不加空格（由 Word 格式自动控制缩进）\n\n"

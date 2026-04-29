@@ -14,15 +14,20 @@ from difflib import SequenceMatcher
 
 import httpx
 
+from app.config import get_settings
+
 logger = logging.getLogger(__name__)
 
 CROSSREF_API = "https://api.crossref.org/works"
-CROSSREF_MAILTO = "jfjfjdjhdhfhf@gmail.com"
 _SEMAPHORE = asyncio.Semaphore(5)
 _SELECT_FIELDS = "title,author,container-title,published,volume,issue,page,type"
 
 # 匹配用标题相似度阈值
 _SIMILARITY_THRESHOLD = 0.55
+
+
+def _crossref_mailto() -> str:
+    return get_settings().crossref_mailto or "noreply@example.com"
 
 
 def _normalize_title(s: str) -> str:
@@ -48,7 +53,7 @@ async def _query_one(client: httpx.AsyncClient, title: str) -> dict | None:
                     "query.bibliographic": title,
                     "rows": 1,
                     "select": _SELECT_FIELDS,
-                    "mailto": CROSSREF_MAILTO,
+                    "mailto": _crossref_mailto(),
                 },
             )
             resp.raise_for_status()

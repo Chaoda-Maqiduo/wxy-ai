@@ -12,7 +12,7 @@ def test_generate_thesis_document_injects_references_before_fulltext(monkeypatch
     calls: list[object] = []
     references_text = "[1] 物联网相关研究[J]."
 
-    async def fake_generate_references(title: str, outline: str) -> str:
+    async def fake_generate_references(title: str, outline: str, **kwargs) -> str:
         calls.append("references")
         return references_text
 
@@ -20,6 +20,7 @@ def test_generate_thesis_document_injects_references_before_fulltext(monkeypatch
             outline: str,
             target_word_count: int = 8000,
             references: str = "",
+            **kwargs,
     ) -> str:
         calls.append(("fulltext", references, target_word_count))
         return "# 第一章 绪论\n系统设计已有较多研究基础[1]。\n"
@@ -76,13 +77,14 @@ def test_generate_thesis_document_injects_references_before_fulltext(monkeypatch
 def test_generate_thesis_document_degrades_when_references_fail(monkeypatch) -> None:
     calls: list[object] = []
 
-    async def fake_generate_references(title: str, outline: str) -> str:
+    async def fake_generate_references(title: str, outline: str, **kwargs) -> str:
         raise RuntimeError("serpapi down")
 
     async def fake_generate_fulltext(
             outline: str,
             target_word_count: int = 8000,
             references: str = "",
+            **kwargs,
     ) -> str:
         calls.append(("fulltext", references))
         return "# 第一章 绪论\n正文。\n"
